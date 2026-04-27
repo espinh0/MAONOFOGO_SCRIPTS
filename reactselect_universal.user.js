@@ -5,7 +5,10 @@
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
 // @version      2.1
 // @description  Converts plain HTML select dropdowns into React Select components with sync.
-// @match        *://*/*
+// @match        https://aplicacoes.cultura.gov.br/*
+// @match        https://salic.cultura.gov.br/*
+// @match        https://cultura.gov.br/*
+// @match        https://*.cultura.gov.br/*
 // @grant        GM_xmlhttpRequest
 // @connect      cdnjs.cloudflare.com
 // @connect      cdn.jsdelivr.net
