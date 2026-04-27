@@ -3,7 +3,7 @@
 // @namespace    power-salic
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
-// @version      3.7
+// @version      3.10
 // @description  Salvamento local automatico de campos de texto e ocultacao do botao excluir proposta.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -28,7 +28,7 @@
     statusError: 'Erro ao salvar',
     statusEmpty: 'Nada salvo',
     statusIdle: 'Aguardando edicao',
-    statusServerDiff: 'Servidor diferente (Recuperar?)',
+    statusServerDiff: 'Carregado valor diferente do rascunho',
     pollIntervalMs: 1200,
     hideDeleteSelector: '#sidenav #excluirproposta',
     ignoreSelector: '.tm-localmem-ignore, [data-tm-localmem="off"]',
@@ -39,6 +39,7 @@
     customStyleId: 'tm-salic-custom-css',
     autoSaveKey: 'tm-salic-setting-autosave',
     hideDeleteKey: 'tm-salic-setting-hide-delete',
+    uiMemoryKey: 'tm-salic-setting-ui-memory',
     reactSelectKey: 'tm-salic-setting-reactselect',
     reactSelectShowOriginalKey: 'tm-salic-setting-reactselect-show-original',
     reactSelectMinOptionsKey: 'tm-salic-setting-reactselect-min-options',
@@ -94,21 +95,22 @@
   }
 
   function storageListKeys() {
+    const keys = new Set();
     try {
-      if (typeof GM_listValues === 'function') return GM_listValues();
+      if (typeof GM_listValues === 'function') {
+        GM_listValues().forEach((key) => keys.add(key));
+      }
     } catch (_) {}
     try {
-      return Object.keys(localStorage || {});
-    } catch (_) {
-      return [];
-    }
+      Object.keys(localStorage || {}).forEach((key) => keys.add(key));
+    } catch (_) {}
+    return Array.from(keys);
   }
 
   function storageRemove(key) {
     try {
       if (typeof GM_deleteValue === 'function') {
         GM_deleteValue(key);
-        return;
       }
     } catch (_) {}
     try {
@@ -189,6 +191,10 @@
 
   function isHideDeleteEnabled() {
     return getSetting(CONFIG.hideDeleteKey, true);
+  }
+
+  function isUiMemoryEnabled() {
+    return getSetting(CONFIG.uiMemoryKey, true);
   }
 
   function isReactSelectEnabled() {
@@ -628,7 +634,7 @@
       text.dataset.tmLocalmemStatusText = '1';
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.textContent = 'Recuperar';
+      btn.textContent = 'Recuperar Rascunho';
       btn.className = 'tm-salic-btn tm-salic-btn-secondary';
       btn.dataset.tmLocalmemRestore = '1';
       status.appendChild(text);
@@ -675,6 +681,28 @@
       updateRestoreButton(field, key);
       setStatus(field, CONFIG.statusEmpty);
     });
+  }
+
+  function clearUiMemoryCache() {
+    const projectId = getProjectId();
+    const uiPrefixes = [
+      `${CONFIG.collapsibleStatePrefix}::${projectId}::`,
+      `${CONFIG.tabStatePrefix}::${projectId}::`
+    ];
+    storageListKeys().forEach((key) => {
+      if (typeof key !== 'string') return;
+      if (uiPrefixes.some((prefix) => key.startsWith(prefix))) {
+        storageRemove(key);
+      }
+    });
+    if (STATE.collapsibleRestoreTimer) {
+      clearTimeout(STATE.collapsibleRestoreTimer);
+      STATE.collapsibleRestoreTimer = null;
+    }
+    if (STATE.tabRestoreTimer) {
+      clearTimeout(STATE.tabRestoreTimer);
+      STATE.tabRestoreTimer = null;
+    }
   }
 
   function updateSettingSwitch(button, stateText, enabled) {
@@ -851,7 +879,7 @@
 
     const clearButton = document.createElement('button');
     clearButton.type = 'button';
-    clearButton.textContent = 'Limpar cache do projeto';
+    clearButton.textContent = 'Limpar rascunhos salvos';
     clearButton.className = 'tm-salic-btn tm-salic-btn-danger';
     clearButton.addEventListener('click', () => {
       const ok = window.confirm('Limpar todos os dados salvos deste projeto?');
@@ -860,7 +888,7 @@
       hideSettingsMenu();
     });
 
-    const autoSaveToggle = createSettingToggle('Salvamento automatico', 'Salva alteracoes locais enquanto voce digita.', isAutoSaveEnabled(), (checked) => {
+    const autoSaveToggle = createSettingToggle('Autosave', 'Salva textos longos enquanto voce digita.', isAutoSaveEnabled(), (checked) => {
       setSetting(CONFIG.autoSaveKey, checked);
       if (checked) {
         scanFields();
@@ -869,22 +897,32 @@
       }
     });
 
-    const hideDeleteToggle = createSettingToggle('Ocultar excluir proposta', 'Controla a exibicao do botao de exclusao.', isHideDeleteEnabled(), (checked) => {
+    const hideDeleteToggle = createSettingToggle('Esconder excluir', 'Oculta o botao de excluir proposta.', isHideDeleteEnabled(), (checked) => {
       setSetting(CONFIG.hideDeleteKey, checked);
       applyDeleteButtonVisibility(checked);
     });
 
-    const reactSelectToggle = createSettingToggle('React Select', 'Substitui menus dropdown por seletores com busca.', isReactSelectEnabled(), (checked) => {
+    const uiMemoryToggle = createSettingToggle('Lembrar tela', 'Lembra abas e menus abertos. Desativar limpa so essa memoria.', isUiMemoryEnabled(), (checked) => {
+      setSetting(CONFIG.uiMemoryKey, checked);
+      if (!checked) {
+        clearUiMemoryCache();
+      } else {
+        scheduleCollapsibleRestore();
+        scheduleTabRestore();
+      }
+    });
+
+    const reactSelectToggle = createSettingToggle('Busca em listas', 'Troca selects grandes por listas com busca.', isReactSelectEnabled(), (checked) => {
       setSetting(CONFIG.reactSelectKey, checked);
     });
 
-    const reactSelectOriginalToggle = createSettingToggle('Dropdown original', 'Exibe o select nativo quando o React Select estiver ativo.', isReactSelectOriginalVisible(), (checked) => {
+    const reactSelectOriginalToggle = createSettingToggle('Select original', 'Mostra tambem o dropdown nativo.', isReactSelectOriginalVisible(), (checked) => {
       setSetting(CONFIG.reactSelectShowOriginalKey, checked);
     });
 
     const reactSelectMinOptions = createNumberStepper(
-      'Minimo para React Select',
-      'Quantidade minima de opcoes do dropdown.',
+      'Minimo de opcoes',
+      'So usa busca quando houver opcoes suficientes.',
       getReactSelectMinOptions(),
       CONFIG.reactSelectMinOptionsMin,
       CONFIG.reactSelectMinOptionsMax,
@@ -914,6 +952,7 @@
     menu.appendChild(clearButton);
     menu.appendChild(autoSaveToggle);
     menu.appendChild(hideDeleteToggle);
+    menu.appendChild(uiMemoryToggle);
     menu.appendChild(reactSelectToggle);
     menu.appendChild(reactSelectOriginalToggle);
     menu.appendChild(reactSelectMinOptions);
@@ -1324,11 +1363,16 @@
     restoreDisplay(link, 'inline');
   }
 
-  function getCollapsibleStateKey() {
+  function getCollapsibleScope(item) {
+    return item && item.closest('#sidenav') ? 'sidenav' : 'page';
+  }
+
+  function getCollapsibleStateKey(scope) {
+    const normalizedScope = scope === 'sidenav' ? 'sidenav' : 'page';
     return [
       CONFIG.collapsibleStatePrefix,
       getProjectId(),
-      window.location.pathname
+      normalizedScope === 'sidenav' ? 'sidebar' : window.location.pathname
     ].join('::');
   }
 
@@ -1343,11 +1387,22 @@
     const index = Math.max(0, siblings.indexOf(item));
     const listClass = list ? normalizeText(list.className) : '';
     const headerText = header ? normalizeText(header.textContent) : '';
+    if (getCollapsibleScope(item) === 'sidenav') {
+      const headerId = header ? (header.id || '') : '';
+      const sidebarLists = Array.from(document.querySelectorAll('#sidenav ul.collapsible'));
+      const listIndex = list ? Math.max(0, sidebarLists.indexOf(list)) : 0;
+      return ['sidenav', listIndex, headerId, headerText].join('|');
+    }
     return [listClass, index, headerText].join('|');
   }
 
-  function getStoredOpenCollapsibles() {
-    const raw = storageGet(getCollapsibleStateKey());
+  function getCollapsibleItems() {
+    return Array.from(document.querySelectorAll('.planilha-produtos ul.collapsible > li, #container-list ul.collapsible > li, #sidenav ul.collapsible > li'));
+  }
+
+  function getStoredOpenCollapsibles(scope) {
+    if (!isUiMemoryEnabled()) return null;
+    const raw = storageGet(getCollapsibleStateKey(scope));
     if (!raw) return null;
     try {
       const parsed = JSON.parse(raw);
@@ -1358,15 +1413,20 @@
   }
 
   function saveOpenCollapsibles() {
-    const openKeys = [];
-    const items = Array.from(document.querySelectorAll('.planilha-produtos ul.collapsible > li, #container-list ul.collapsible > li'));
+    if (!isUiMemoryEnabled()) return;
+    const openKeysByScope = {
+      page: [],
+      sidenav: []
+    };
+    const items = getCollapsibleItems();
     items.forEach((item) => {
       const header = getDirectCollapsiblePart(item, 'collapsible-header');
       const body = getDirectCollapsiblePart(item, 'collapsible-body');
       const isOpen = item.classList.contains('active') || (header && header.classList.contains('active')) || (body && window.getComputedStyle(body).display !== 'none');
-      if (isOpen) openKeys.push(getCollapsibleItemKey(item));
+      if (isOpen) openKeysByScope[getCollapsibleScope(item)].push(getCollapsibleItemKey(item));
     });
-    storageSet(getCollapsibleStateKey(), JSON.stringify(openKeys));
+    storageSet(getCollapsibleStateKey('page'), JSON.stringify(openKeysByScope.page));
+    storageSet(getCollapsibleStateKey('sidenav'), JSON.stringify(openKeysByScope.sidenav));
   }
 
   function setCollapsibleItemOpen(item, shouldOpen) {
@@ -1384,14 +1444,21 @@
   }
 
   function restoreOpenCollapsibles() {
+    if (!isUiMemoryEnabled()) return;
     if (Date.now() < STATE.collapsibleInteractionUntil) return;
-    const stored = getStoredOpenCollapsibles();
-    if (!stored) return;
-    const items = Array.from(document.querySelectorAll('.planilha-produtos ul.collapsible > li, #container-list ul.collapsible > li'));
+    const storedByScope = {
+      page: getStoredOpenCollapsibles('page'),
+      sidenav: getStoredOpenCollapsibles('sidenav')
+    };
+    if (!storedByScope.page && !storedByScope.sidenav) return;
+    const items = getCollapsibleItems();
     items.forEach((item) => {
+      const scope = getCollapsibleScope(item);
+      const stored = storedByScope[scope];
+      if (!stored) return;
       setCollapsibleItemOpen(item, stored.has(getCollapsibleItemKey(item)));
     });
-    if (stored.size) {
+    if (storedByScope.page && storedByScope.page.size) {
       const expandAll = document.querySelector('#container-list .expandall, .planilha-produtos .expandall');
       const collapseAll = document.querySelector('#container-list .collapseall, .planilha-produtos .collapseall');
       if (expandAll) expandAll.style.display = '';
@@ -1400,6 +1467,7 @@
   }
 
   function scheduleCollapsibleRestore() {
+    if (!isUiMemoryEnabled()) return;
     if (STATE.collapsibleRestoreTimer) clearTimeout(STATE.collapsibleRestoreTimer);
     const interactionDelay = Math.max(0, STATE.collapsibleInteractionUntil - Date.now() + 100);
     STATE.collapsibleRestoreTimer = setTimeout(() => {
@@ -1447,6 +1515,7 @@
   }
 
   function getStoredTabs() {
+    if (!isUiMemoryEnabled()) return {};
     const raw = storageGet(getTabStateKey());
     if (!raw) return {};
     try {
@@ -1458,6 +1527,7 @@
   }
 
   function saveActiveTabs() {
+    if (!isUiMemoryEnabled()) return;
     const state = {};
     const tabsGroups = Array.from(document.querySelectorAll('ul.tabs'));
     tabsGroups.forEach((tabs) => {
@@ -1472,6 +1542,7 @@
   }
 
   function saveClickedTab(tabLink) {
+    if (!isUiMemoryEnabled()) return;
     const tabs = tabLink.closest('ul.tabs');
     const href = tabLink.getAttribute('href');
     if (!tabs || !href || href.charAt(0) !== '#') return;
@@ -1548,6 +1619,7 @@
   }
 
   function restoreActiveTabs() {
+    if (!isUiMemoryEnabled()) return;
     if (Date.now() < STATE.tabInteractionUntil) return;
     const state = getStoredTabs();
     Object.keys(state).forEach((groupKey) => {
@@ -1563,6 +1635,7 @@
   }
 
   function scheduleTabRestore() {
+    if (!isUiMemoryEnabled()) return;
     if (STATE.tabRestoreTimer) clearTimeout(STATE.tabRestoreTimer);
     const interactionDelay = Math.max(0, STATE.tabInteractionUntil - Date.now() + 100);
     STATE.tabRestoreTimer = setTimeout(() => {
