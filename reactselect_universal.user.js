@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Universal Select -> React Select
-// @namespace    collar3
+// @namespace    universal-react-select
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
 // @version      2.1

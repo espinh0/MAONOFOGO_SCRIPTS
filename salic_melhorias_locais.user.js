@@ -1,6 +1,8 @@
 // ==UserScript==
 // @name         SALIC Melhorias Locais
-// @namespace    collar3
+// @namespace    power-salic
+// @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
+// @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
 // @version      1.0
 // @description  Salvamento local automatico de campos de texto e ocultacao do botao excluir proposta.
 // @match        https://aplicacoes.cultura.gov.br/*
@@ -16,7 +18,7 @@
   const CONFIG = {
     saveDelayMs: 500,
     statusClass: 'tm-salic-local-status',
-    statusSaving: 'Salvando...','
+      statusSaving: 'Salvando...',
     statusSaved: 'Salvo',
     statusRestored: 'Restaurado',
     statusError: 'Erro ao salvar',
