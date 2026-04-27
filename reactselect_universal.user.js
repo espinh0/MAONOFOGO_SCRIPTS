@@ -3,7 +3,7 @@
 // @namespace    universal-react-select
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
-// @version      2.1
+// @version      2.7
 // @description  Converts plain HTML select dropdowns into React Select components with sync.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -35,13 +35,22 @@
     minControlWidth: 240,
     menuMinWidth: 320,
     cssId: 'tm-reactselect-css',
-    hiddenClass: 'tm-reactselect-hidden'
+    hiddenClass: 'tm-reactselect-hidden',
+    enabledKey: 'tm-salic-setting-reactselect',
+    showOriginalKey: 'tm-salic-setting-reactselect-show-original',
+    minOptionsKey: 'tm-salic-setting-reactselect-min-options',
+    minOptionsDefault: 10,
+    minOptionsMin: 0,
+    minOptionsMax: 99,
+    settingEventName: 'tm-salic-setting-change',
+    settingOn: '1',
+    settingOff: '0'
   };
 
   const STATE = {
     bootPromise: null,
     initialized: false,
-    instanceBySelect: new WeakMap(),
+    instanceBySelect: new Map(),
     scanTimer: null,
     lastLoadError: null,
     lastLoadErrorAt: 0,
@@ -51,6 +60,59 @@
   };
 
   const ROOT = window;
+
+  function isReactSelectEnabled() {
+    try {
+      const stored = localStorage.getItem(CONFIG.enabledKey);
+      if (stored === CONFIG.settingOn) return true;
+      if (stored === CONFIG.settingOff) return false;
+    } catch (_) {}
+    return true;
+  }
+
+  function shouldShowOriginalSelect() {
+    try {
+      const stored = localStorage.getItem(CONFIG.showOriginalKey);
+      if (stored === CONFIG.settingOn) return true;
+      if (stored === CONFIG.settingOff) return false;
+    } catch (_) {}
+    return true;
+  }
+
+  function applyOriginalSelectVisibility(select, previousTabIndex) {
+    if (shouldShowOriginalSelect()) {
+      select.classList.remove(CONFIG.hiddenClass);
+      if (previousTabIndex === null || previousTabIndex === undefined) {
+        select.removeAttribute('tabindex');
+      } else {
+        select.setAttribute('tabindex', previousTabIndex);
+      }
+      return;
+    }
+    select.classList.add(CONFIG.hiddenClass);
+    select.tabIndex = -1;
+  }
+
+  function applyOriginalVisibilityToInstances() {
+    Array.from(STATE.instanceBySelect.entries()).forEach(([select, instance]) => {
+      applyOriginalSelectVisibility(select, instance.previousTabIndex);
+    });
+  }
+
+  function clampNumber(value, min, max) {
+    const number = Number.parseInt(value, 10);
+    if (!Number.isFinite(number)) return min;
+    return Math.min(max, Math.max(min, number));
+  }
+
+  function getMinOptionsThreshold() {
+    try {
+      const stored = localStorage.getItem(CONFIG.minOptionsKey);
+      return clampNumber(stored === null || stored === undefined ? CONFIG.minOptionsDefault : stored, CONFIG.minOptionsMin, CONFIG.minOptionsMax);
+    } catch (_) {
+      return CONFIG.minOptionsDefault;
+    }
+  }
 
   async function loadEsmModules() {
     if (STATE.react && STATE.reactDom && STATE.reactSelect) return;
@@ -180,6 +242,21 @@
 .tm-reactselect-wrapper {
   display: inline-block;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  position: relative;
+}
+.tm-reactselect-wrapper::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 0;
+  width: 3px;
+  border-radius: 3px;
+  background: #0d6efd;
+  z-index: 1;
+  pointer-events: none;
 }
 `;
     document.head.appendChild(style);
@@ -212,6 +289,7 @@
     if (select.matches(CONFIG.ignoreSelector)) return false;
     if (select.closest && select.closest(CONFIG.ignoreSelector)) return false;
     if (select.getAttribute('data-tm-reactselect') === 'off') return false;
+    if (getSelectableOptionCount(select) < getMinOptionsThreshold()) return false;
     return true;
   }
 
@@ -280,6 +358,10 @@
     return { options, flat };
   }
 
+  function getSelectableOptionCount(select) {
+    return Array.from(select.options || []).filter((option, index) => !isPlaceholderOption(option, index)).length;
+  }
+
   function getSelectedValue(select, isMulti) {
     const selected = Array.from(select.selectedOptions || []);
     let selectedValues = selected.map((opt) => opt.value);
@@ -315,6 +397,7 @@
   }
 
   function createReactSelect(select) {
+    const previousTabIndex = select.getAttribute('tabindex');
     const wrapper = document.createElement('div');
     wrapper.className = 'tm-reactselect-wrapper';
     wrapper.dataset.tmReactselectHost = '1';
@@ -325,12 +408,10 @@
     if (Number.isFinite(computedWidth) && computedWidth > 0) {
       wrapper.style.width = `${computedWidth}px`;
     }
-    wrapper.style.minWidth = `${CONFIG.minControlWidth}px`;
+    wrapper.style.maxWidth = '100%';
+    wrapper.style.minWidth = '0';
 
-    if (CONFIG.hideOriginalSelect) {
-      select.classList.add(CONFIG.hiddenClass);
-      select.tabIndex = -1;
-    }
+    applyOriginalSelectVisibility(select, previousTabIndex);
 
     const SelectComponent = STATE.reactSelect;
     const React = STATE.react;
@@ -345,9 +426,36 @@
 
     function render() {
       const styles = {
-        container: (base) => ({ ...base, width: '100%', minWidth: CONFIG.minControlWidth }),
-        menu: (base) => ({ ...base, minWidth: CONFIG.menuMinWidth }),
-        menuPortal: (base) => ({ ...base, zIndex: CONFIG.maxMenuZIndex, minWidth: CONFIG.menuMinWidth })
+        container: (base) => ({ ...base, width: '100%', minWidth: 0, maxWidth: '100%' }),
+        control: (base, state) => ({
+          ...base,
+          minHeight: 30,
+          minWidth: 0,
+          borderColor: state.isFocused ? '#0d6efd' : '#8bb8f5',
+          borderLeftWidth: 4,
+          borderLeftColor: '#0d6efd',
+          backgroundColor: '#f8fbff',
+          boxShadow: state.isFocused ? '0 0 0 2px rgba(13, 110, 253, 0.16)' : 'none',
+          '&:hover': {
+            borderColor: '#0d6efd'
+          }
+        }),
+        valueContainer: (base) => ({ ...base, minWidth: 0, padding: '1px 6px 1px 10px' }),
+        input: (base) => ({ ...base, margin: 0, padding: 0 }),
+        singleValue: (base) => ({ ...base, color: '#12385f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }),
+        placeholder: (base) => ({ ...base, color: '#5f7894' }),
+        indicatorsContainer: (base) => ({ ...base, flexShrink: 0, minHeight: 28 }),
+        dropdownIndicator: (base) => ({ ...base, padding: '3px 4px', color: '#0d6efd' }),
+        clearIndicator: (base) => ({ ...base, padding: '3px 4px' }),
+        indicatorSeparator: (base) => ({ ...base, marginTop: 5, marginBottom: 5, backgroundColor: '#b7d1f4' }),
+        menu: (base) => ({ ...base, minWidth: Math.min(CONFIG.menuMinWidth, window.innerWidth - 16), border: '1px solid #8bb8f5', boxShadow: '0 8px 18px rgba(13, 110, 253, 0.14)' }),
+        menuPortal: (base) => ({ ...base, zIndex: CONFIG.maxMenuZIndex, minWidth: Math.min(CONFIG.menuMinWidth, window.innerWidth - 16) }),
+        option: (base, state) => ({
+          ...base,
+          padding: '5px 10px',
+          backgroundColor: state.isSelected ? '#0d6efd' : (state.isFocused ? '#eaf3ff' : base.backgroundColor),
+          color: state.isSelected ? '#fff' : '#17324d'
+        })
       };
       const valueProp = isMulti
         ? currentFlat.filter((opt) => (currentValue || []).includes(String(opt.value)))
@@ -417,30 +525,60 @@
       wrapper,
       optionObserver,
       selectChangeHandler,
-      refreshFromSelect
+      refreshFromSelect,
+      previousTabIndex
     };
 
     STATE.instanceBySelect.set(select, instance);
     select.dataset.tmReactselectProcessed = '1';
   }
 
+  function destroyInstance(select, instance) {
+    try {
+      if (instance.optionObserver) instance.optionObserver.disconnect();
+      select.removeEventListener('change', instance.selectChangeHandler);
+      select.removeEventListener('input', instance.selectChangeHandler);
+      if (instance.wrapper && instance.wrapper._tmRoot && instance.wrapper._tmRoot.unmount) {
+        instance.wrapper._tmRoot.unmount();
+      } else if (instance.wrapper && STATE.reactDom && STATE.reactDom.unmountComponentAtNode) {
+        STATE.reactDom.unmountComponentAtNode(instance.wrapper);
+      }
+      if (instance.wrapper && instance.wrapper.parentElement) {
+        instance.wrapper.remove();
+      }
+      select.classList.remove(CONFIG.hiddenClass);
+      if (instance.previousTabIndex === null || instance.previousTabIndex === undefined) select.removeAttribute('tabindex');
+      else select.setAttribute('tabindex', instance.previousTabIndex);
+      delete select.dataset.tmReactselectProcessed;
+    } catch (_) {}
+    STATE.instanceBySelect.delete(select);
+  }
+
+  function destroyAllInstances() {
+    Array.from(STATE.instanceBySelect.entries()).forEach(([select, instance]) => {
+      destroyInstance(select, instance);
+    });
+  }
+
   function cleanupOrphaned() {
-    STATE.instanceBySelect.forEach((instance, select) => {
+    Array.from(STATE.instanceBySelect.entries()).forEach(([select, instance]) => {
       if (!select.isConnected) {
-        try {
-          instance.optionObserver.disconnect();
-          select.removeEventListener('change', instance.selectChangeHandler);
-          if (instance.wrapper && instance.wrapper._tmRoot && instance.wrapper._tmRoot.unmount) {
-            instance.wrapper._tmRoot.unmount();
-          }
-        } catch (_) {}
-        STATE.instanceBySelect.delete(select);
+        destroyInstance(select, instance);
       }
     });
   }
 
   async function scanAndEnhance() {
     if (!document.body) return;
+    if (!isReactSelectEnabled()) {
+      destroyAllInstances();
+      return;
+    }
+    Array.from(STATE.instanceBySelect.entries()).forEach(([select, instance]) => {
+      if (getSelectableOptionCount(select) < getMinOptionsThreshold()) {
+        destroyInstance(select, instance);
+      }
+    });
     await ensureReactSelect();
     const selects = Array.from(document.querySelectorAll('select'));
     selects.forEach((select) => {
@@ -464,6 +602,38 @@
     });
 
     observer.observe(document.documentElement, { childList: true, subtree: true });
+    window.addEventListener(CONFIG.settingEventName, (event) => {
+      if (!event.detail || event.detail.key !== CONFIG.enabledKey) return;
+      if (event.detail.enabled) {
+        scanAndEnhance();
+      } else {
+        destroyAllInstances();
+      }
+    });
+    window.addEventListener(CONFIG.settingEventName, (event) => {
+      if (!event.detail || event.detail.key !== CONFIG.minOptionsKey) return;
+      scanAndEnhance();
+    });
+    window.addEventListener(CONFIG.settingEventName, (event) => {
+      if (!event.detail || event.detail.key !== CONFIG.showOriginalKey) return;
+      applyOriginalVisibilityToInstances();
+    });
+    window.addEventListener('storage', (event) => {
+      if (event.key !== CONFIG.enabledKey) return;
+      if (isReactSelectEnabled()) {
+        scanAndEnhance();
+      } else {
+        destroyAllInstances();
+      }
+    });
+    window.addEventListener('storage', (event) => {
+      if (event.key !== CONFIG.minOptionsKey) return;
+      scanAndEnhance();
+    });
+    window.addEventListener('storage', (event) => {
+      if (event.key !== CONFIG.showOriginalKey) return;
+      applyOriginalVisibilityToInstances();
+    });
     scanAndEnhance();
   }
 
