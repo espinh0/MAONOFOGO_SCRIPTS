@@ -1,6 +1,8 @@
 // ==UserScript==
 // @name         Universal Select -> React Select
 // @namespace    collar3
+// @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
+// @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
 // @version      2.1
 // @description  Converts plain HTML select dropdowns into React Select components with sync.
 // @match        *://*/*
