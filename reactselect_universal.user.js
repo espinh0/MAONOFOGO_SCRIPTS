@@ -32,6 +32,8 @@
     ignoreSelector: '.tm-reactselect-ignore, [data-tm-reactselect="off"]',
     scanIntervalMs: 500,
     maxMenuZIndex: 999999,
+    minControlWidth: 240,
+    menuMinWidth: 320,
     cssId: 'tm-reactselect-css',
     hiddenClass: 'tm-reactselect-hidden'
   };
@@ -318,10 +320,12 @@
     wrapper.dataset.tmReactselectHost = '1';
     select.insertAdjacentElement('afterend', wrapper);
 
-    const computedWidth = window.getComputedStyle(select).width;
-    if (computedWidth && computedWidth !== 'auto') {
-      wrapper.style.width = computedWidth;
+    const computedWidthRaw = window.getComputedStyle(select).width;
+    const computedWidth = Number.parseFloat(computedWidthRaw);
+    if (Number.isFinite(computedWidth) && computedWidth > 0) {
+      wrapper.style.width = `${computedWidth}px`;
     }
+    wrapper.style.minWidth = `${CONFIG.minControlWidth}px`;
 
     if (CONFIG.hideOriginalSelect) {
       select.classList.add(CONFIG.hiddenClass);
@@ -341,8 +345,9 @@
 
     function render() {
       const styles = {
-        container: (base) => ({ ...base, width: '100%' }),
-        menuPortal: (base) => ({ ...base, zIndex: CONFIG.maxMenuZIndex })
+        container: (base) => ({ ...base, width: '100%', minWidth: CONFIG.minControlWidth }),
+        menu: (base) => ({ ...base, minWidth: CONFIG.menuMinWidth }),
+        menuPortal: (base) => ({ ...base, zIndex: CONFIG.maxMenuZIndex, minWidth: CONFIG.menuMinWidth })
       };
       const valueProp = isMulti
         ? currentFlat.filter((opt) => (currentValue || []).includes(String(opt.value)))
