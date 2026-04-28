@@ -455,11 +455,11 @@
 .tm-salic-file-dropzone {
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto 1fr;
   align-items: center;
-  gap: .75rem;
+  gap: 1rem;
   width: 100%;
-  min-height: 4.75rem;
+  min-height: 5.5rem;
   margin: .35rem 0 .75rem;
   padding: .9rem 1rem;
   border: 2px dashed #90a4ae;
@@ -467,7 +467,22 @@
   background: #f8fafb;
   color: #263238;
   cursor: pointer;
+  position: relative;
+  overflow: visible;
   transition: border-color .15s ease-in-out, background-color .15s ease-in-out, box-shadow .15s ease-in-out;
+}
+.tm-salic-file-dropzone::before {
+  content: "\f0c1";
+  font-family: 'bootstrap-icons';
+  font-size: 3.5rem;
+  color: #b0bec5;
+  opacity: 0.4;
+  pointer-events: none;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.tm-salic-file-dropzone::after {
+  display: none;
 }
 .tm-salic-file-dropzone:hover,
 .tm-salic-file-dropzone:focus {
@@ -500,17 +515,7 @@
   font-weight: 600;
 }
 .tm-salic-file-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 2rem;
-  padding: .35rem .65rem;
-  border: 1px solid #1976d2;
-  border-radius: .25rem;
-  background: #fff;
-  color: #1976d2;
-  font: 700 .8rem/1 Arial, sans-serif;
-  white-space: nowrap;
+  display: none;
 }
 .tm-reactselect-wrapper,
 [data-tm-reactselect-host="1"] {
@@ -524,14 +529,7 @@ input[type="text"][aria-expanded],
 input[type="text"][aria-haspopup] {
   padding-left: 0.5rem;
 }
-@media (max-width: 576px) {
-  .tm-salic-file-dropzone {
-    grid-template-columns: 1fr;
-  }
-  .tm-salic-file-action {
-    width: 100%;
-  }
-}
+
 @media (max-width: 576px) {
   #${CONFIG.settingsRootId},
   #${CONFIG.settingsButtonId} {
@@ -1975,15 +1973,10 @@ input[type="text"][aria-haspopup] {
     name.dataset.tmSalicFileName = '1';
     name.textContent = getFileNames(input);
 
-    const action = document.createElement('span');
-    action.className = 'tm-salic-file-action';
-    action.innerHTML = '<i class="bi bi-folder2-open tm-salic-btn-icon" aria-hidden="true"></i><span>Escolher arquivo</span>';
-
     main.appendChild(title);
     main.appendChild(help);
     main.appendChild(name);
     dropzone.appendChild(main);
-    dropzone.appendChild(action);
     input.insertAdjacentElement('afterend', dropzone);
 
     const openPicker = () => {
