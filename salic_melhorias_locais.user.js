@@ -244,6 +244,14 @@
     .tm-salic-btn .tm-salic-btn-icon + .tm-salic-btn-label {
       white-space: nowrap;
     }
+    .tm-salic-settings {
+      display: inline-flex;
+      align-items: center;
+      position: relative;
+      z-index: 5;
+      width: fit-content;
+      max-width: 100%;
+    }
     #${CONFIG.settingsButtonId} .tm-salic-btn-icon {
       font-size: 1rem;
     }
@@ -253,6 +261,9 @@
       margin: .5rem 0;
     }
     #${CONFIG.settingsButtonId} {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
       max-width: 100%;
       white-space: normal;
     }
@@ -266,6 +277,7 @@
       display: block;
       max-height: calc(100vh - 1rem);
       overflow-y: auto;
+      z-index: 2147483647;
     }
     .tm-salic-btn {
       display: inline-flex;
@@ -317,6 +329,7 @@
       color: #212529;
       box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15);
       font-family: Arial, sans-serif;
+      min-width: 14rem;
     }
     .${CONFIG.statusClass} {
       display: flex;
