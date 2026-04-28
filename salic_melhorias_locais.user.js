@@ -276,8 +276,6 @@
       font-style: normal;
       font-weight: 400;
       display: none;
-      max-height: calc(100vh - 1rem);
-      overflow-y: auto;
       z-index: 2147483647;
     }
     .tm-salic-btn {
