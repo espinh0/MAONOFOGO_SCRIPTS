@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         SALIC Melhorias Locais
+// @name         Power SALIC
 // @namespace    power-salic
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
@@ -525,6 +525,52 @@
     return '';
   }
 
+  function getTableRowHeaderText(row) {
+    if (!row) return '';
+    const cells = Array.from(row.querySelectorAll('th, td'));
+    for (const cell of cells) {
+      const text = normalizeText(cell.textContent);
+      if (!text) continue;
+      const isHeaderLike = cell.tagName === 'TH' || cell.hasAttribute('colspan') || cell.querySelector('b, strong');
+      if (isHeaderLike || cells.length === 1) return text;
+    }
+    return '';
+  }
+
+  function getStructuralFieldLabel(field) {
+    if (!field) return '';
+    const explicit = getFieldLabel(field);
+    if (explicit) return explicit;
+
+    const title = field.getAttribute('title') || '';
+    if (title.trim()) return title.trim();
+
+    const ariaLabel = field.getAttribute('aria-label') || '';
+    if (ariaLabel.trim()) return ariaLabel.trim();
+
+    const placeholder = field.getAttribute('placeholder') || '';
+    if (placeholder.trim()) return placeholder.trim();
+
+    const table = field.closest('table');
+    const row = field.closest('tr');
+    if (table && row) {
+      let current = row.previousElementSibling;
+      while (current) {
+        const rowHeader = getTableRowHeaderText(current);
+        if (rowHeader) return rowHeader;
+        current = current.previousElementSibling;
+      }
+
+      const caption = table.querySelector('caption');
+      if (caption && caption.textContent.trim()) return caption.textContent.trim();
+    }
+
+    const caption = field.closest('.input-field')?.querySelector('.caption');
+    if (caption && caption.textContent.trim()) return caption.textContent.trim();
+
+    return '';
+  }
+
   function getFieldIdentity(field) {
     const idPart = field.id || '';
     const namePart = field.name || '';
@@ -681,6 +727,596 @@
       updateRestoreButton(field, key);
       setStatus(field, CONFIG.statusEmpty);
     });
+  }
+
+  function htmlToPlainText(value) {
+    const text = String(value || '');
+    if (!text) return '';
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<div>${text}</div>`, 'text/html');
+      const blockTags = new Set(['P', 'DIV', 'LI', 'TR', 'TD', 'TH', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'SECTION', 'ARTICLE', 'BLOCKQUOTE']);
+      const skipTags = new Set(['SCRIPT', 'STYLE']);
+
+      const serialize = (node) => {
+        if (!node) return '';
+        if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || '';
+        if (node.nodeType !== Node.ELEMENT_NODE) return '';
+        const tagName = node.tagName;
+        if (skipTags.has(tagName)) return '';
+        if (tagName === 'BR') return '\n';
+        const content = Array.from(node.childNodes).map((child) => serialize(child)).join('');
+        if (blockTags.has(tagName)) return `\n${content}\n`;
+        return content;
+      };
+
+      return serialize(doc.body)
+        .replace(/\u00a0/g, ' ')
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n[ \t]+/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    } catch (_) {
+      return text
+        .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+        .replace(/<\s*\/\s*(p|div|li|tr|td|th|h[1-6]|section|article|blockquote)\s*>/gi, '\n')
+        .replace(/<\s*(p|div|li|tr|td|th|h[1-6]|section|article|blockquote)[^>]*>/gi, '')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n[ \t]+/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    }
+  }
+
+  function getStoredTextEntries() {
+    const projectId = getProjectId();
+    const prefix = `tm-salic-localmem::${projectId}::`;
+    const fieldsByKey = new Map();
+    Array.from(document.querySelectorAll('textarea')).forEach((field) => {
+      if (!isEligibleField(field)) return;
+      fieldsByKey.set(getFieldKey(field), field);
+    });
+
+    return storageListKeys()
+      .filter((key) => typeof key === 'string' && key.startsWith(prefix))
+      .map((key) => {
+        const stored = storageGet(key);
+        if (stored === null || stored === undefined || isValueEmpty(stored)) return null;
+        const field = fieldsByKey.get(key);
+        const label = field ? getStructuralFieldLabel(field) : '';
+        const identity = key.slice(prefix.length);
+        return {
+          key,
+          identity,
+          label: normalizeText(label) || identity,
+          text: htmlToPlainText(stored).trim()
+        };
+      })
+      .filter(Boolean)
+      .sort((left, right) => left.label.localeCompare(right.label, 'pt-BR', { sensitivity: 'base' }));
+  }
+
+  function getStoredHtmlEntries() {
+    const projectId = getProjectId();
+    const prefix = `tm-salic-localmem::${projectId}::`;
+    const fieldsByKey = new Map();
+    Array.from(document.querySelectorAll('textarea')).forEach((field) => {
+      if (!isEligibleField(field)) return;
+      fieldsByKey.set(getFieldKey(field), field);
+    });
+
+    return storageListKeys()
+      .filter((key) => typeof key === 'string' && key.startsWith(prefix))
+      .map((key) => {
+        const stored = storageGet(key);
+        if (stored === null || stored === undefined || isValueEmpty(stored)) return null;
+        const field = fieldsByKey.get(key);
+        const label = field ? getStructuralFieldLabel(field) : '';
+        const identity = key.slice(prefix.length);
+        return {
+          key,
+          identity,
+          label: normalizeText(label) || identity,
+          html: String(stored)
+        };
+      })
+      .filter(Boolean)
+      .sort((left, right) => left.label.localeCompare(right.label, 'pt-BR', { sensitivity: 'base' }));
+  }
+
+  function downloadTextFile(fileName, content) {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function escapeHtml(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function exportProjectTexts() {
+    const entries = getStoredTextEntries();
+    if (!entries.length) {
+      window.alert('Nenhum texto salvo para exportar neste projeto.');
+      return;
+    }
+    const projectId = getProjectId();
+    const lines = [
+      'SALIC Melhorias Locais',
+      `Projeto: ${projectId}`,
+      `Pagina: ${window.location.href}`,
+      `Gerado em: ${new Date().toLocaleString('pt-BR')}`,
+      ''
+    ];
+
+    entries.forEach((entry, index) => {
+      lines.push(`[${index + 1}] ${entry.label}`);
+      lines.push(`Chave: ${entry.identity}`);
+      lines.push('');
+      lines.push(entry.text || '');
+      lines.push('');
+      lines.push('---');
+      lines.push('');
+    });
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    downloadTextFile(`salic-rascunhos-${projectId}-${stamp}.txt`, `${lines.join('\n').trimEnd()}\n`);
+  }
+
+  function exportProjectHtml() {
+    const entries = getStoredHtmlEntries();
+    if (!entries.length) {
+      window.alert('Nenhum texto salvo para exportar neste projeto.');
+      return;
+    }
+    const projectId = getProjectId();
+    const generatedAt = new Date().toLocaleString('pt-BR');
+    const body = entries.map((entry, index) => `
+      <article class="tm-export-card">
+        <header class="tm-export-card-header">
+          <div class="tm-export-index">${String(index + 1).padStart(2, '0')}</div>
+          <div class="tm-export-heading-wrap">
+            <h2 class="tm-export-heading">${escapeHtml(entry.label)}</h2>
+            <div class="tm-export-meta">Chave: ${escapeHtml(entry.identity)}</div>
+          </div>
+        </header>
+        <div class="tm-export-actions">
+          <button type="button" class="tm-export-copy">Copiar conteúdo</button>
+        </div>
+        <div class="tm-export-content">${entry.html}</div>
+      </article>
+    `).join('\n');
+
+    const html = `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Power Salic ${escapeHtml(projectId)}</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg-start: #edf4ff;
+      --bg-end: #f7f8fb;
+      --ink: #152033;
+      --muted: #5f6b7a;
+      --panel: rgba(255, 255, 255, .9);
+      --panel-solid: #fff;
+      --border: #dbe3ef;
+      --border-strong: #c6d2e3;
+      --accent: #114b8f;
+      --accent-soft: #e9f1ff;
+      --shadow: 0 18px 42px rgba(17, 32, 51, .10);
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: clamp(16px, 3vw, 32px);
+      background:
+        radial-gradient(circle at top left, rgba(17, 75, 143, .14), transparent 36%),
+        radial-gradient(circle at top right, rgba(73, 159, 255, .12), transparent 30%),
+        linear-gradient(180deg, var(--bg-start), var(--bg-end));
+      color: var(--ink);
+      font: 15px/1.55 Arial, sans-serif;
+    }
+    .tm-export-shell {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: clamp(18px, 3vw, 30px);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.6rem, 2.3vw, 2.35rem);
+      line-height: 1.1;
+      letter-spacing: -.02em;
+    }
+    .tm-export-subtitle {
+      margin: 0 0 20px;
+      color: var(--muted);
+      font-size: .98rem;
+    }
+    .tm-export-summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 26px;
+    }
+    .tm-export-summary-item {
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--panel-solid);
+    }
+    .tm-export-summary-label {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: .76rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .tm-export-summary-value {
+      font-size: .98rem;
+      font-weight: 700;
+      word-break: break-word;
+    }
+    .tm-export-info {
+      margin: 0 0 24px;
+      color: var(--muted);
+      font-size: .92rem;
+    }
+    .tm-export-card {
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--panel-solid);
+    }
+    .tm-export-card + .tm-export-card {
+      margin-top: 18px;
+    }
+    .tm-export-card-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+    .tm-export-index {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 800;
+      font-size: .95rem;
+    }
+    .tm-export-heading-wrap {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .tm-export-heading {
+      margin: 0;
+      font-size: 1.1rem;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .tm-export-meta {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: .86rem;
+      overflow-wrap: anywhere;
+    }
+    .tm-export-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin: 0 0 12px;
+    }
+    .tm-export-copy {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: .35rem;
+      padding: .5rem .8rem;
+      border: 1px solid var(--border-strong);
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font: 700 .84rem/1 Arial, sans-serif;
+      cursor: pointer;
+      transition: transform .15s ease, background-color .15s ease, border-color .15s ease, color .15s ease;
+    }
+    .tm-export-copy:hover,
+    .tm-export-copy:focus {
+      border-color: var(--accent);
+      background: #dce9ff;
+      color: #0d3b75;
+      transform: translateY(-1px);
+      outline: none;
+    }
+    .tm-export-content {
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #fbfcfe;
+      color: var(--ink);
+      overflow-wrap: anywhere;
+      line-height: 1.7;
+    }
+    .tm-export-content > :first-child {
+      margin-top: 0;
+    }
+    .tm-export-content > :last-child {
+      margin-bottom: 0;
+    }
+    .tm-export-content p {
+      margin: 0 0 1em;
+    }
+    .tm-export-content p:last-child {
+      margin-bottom: 0;
+    }
+    .tm-export-content h1,
+    .tm-export-content h2,
+    .tm-export-content h3,
+    .tm-export-content h4,
+    .tm-export-content h5,
+    .tm-export-content h6 {
+      margin: 1.1em 0 .5em;
+      line-height: 1.2;
+    }
+    .tm-export-content ul,
+    .tm-export-content ol {
+      margin: 0 0 1em 1.4em;
+      padding: 0;
+    }
+    .tm-export-content li + li {
+      margin-top: .35em;
+    }
+    .tm-export-content blockquote {
+      margin: 0 0 1em;
+      padding: .9rem 1rem;
+      border-left: 4px solid var(--accent);
+      border-radius: 10px;
+      background: #eef5ff;
+      color: #25364a;
+    }
+    .tm-export-content pre {
+      margin: 0 0 1em;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #0f172a;
+      color: #e2e8f0;
+      overflow-x: auto;
+      white-space: pre;
+    }
+    .tm-export-content code {
+      padding: .12rem .3rem;
+      border-radius: 6px;
+      background: rgba(15, 23, 42, .08);
+      font-family: Consolas, 'Courier New', monospace;
+      font-size: .92em;
+    }
+    .tm-export-content pre code {
+      padding: 0;
+      background: transparent;
+      color: inherit;
+    }
+    .tm-export-content img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 10px;
+    }
+    .tm-export-content table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      display: block;
+      max-width: 100%;
+      overflow-x: auto;
+    }
+    .tm-export-content td,
+    .tm-export-content th {
+      border: 1px solid #d1d5db;
+      padding: .5rem .65rem;
+      vertical-align: top;
+    }
+    .tm-export-content hr {
+      border: 0;
+      border-top: 1px solid #d7deea;
+      margin: 1.2em 0;
+    }
+    .tm-export-content a {
+      color: var(--accent);
+    }
+    .tm-export-content details {
+      margin: 0 0 1em;
+      padding: .75rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fff;
+    }
+    @media (max-width: 860px) {
+      .tm-export-summary {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (max-width: 720px) {
+      body {
+        padding: 12px;
+      }
+      .tm-export-shell {
+        padding: 14px;
+        border-radius: 16px;
+      }
+      .tm-export-card {
+        padding: 14px;
+      }
+      .tm-export-card-header {
+        gap: 10px;
+      }
+      .tm-export-index {
+        width: 2.1rem;
+        height: 2.1rem;
+      }
+      .tm-export-content {
+        padding: 14px;
+      }
+      .tm-export-content table {
+        display: block;
+      }
+      .tm-export-actions {
+        justify-content: stretch;
+      }
+      .tm-export-copy {
+        width: 100%;
+      }
+    }
+    @media print {
+      body {
+        background: #fff;
+        padding: 0;
+      }
+      .tm-export-shell {
+        box-shadow: none;
+        border: 0;
+        border-radius: 0;
+        background: #fff;
+      }
+      .tm-export-card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="tm-export-shell">
+    <h1>Power Salic</h1>
+    <p class="tm-export-subtitle">Exportação em HTML com a formatação preservada dos rascunhos salvos localmente.</p>
+    <section class="tm-export-summary" aria-label="Resumo da exportação">
+      <div class="tm-export-summary-item">
+        <span class="tm-export-summary-label">Projeto</span>
+        <span class="tm-export-summary-value">${escapeHtml(projectId)}</span>
+      </div>
+      <div class="tm-export-summary-item">
+        <span class="tm-export-summary-label">Campos exportados</span>
+        <span class="tm-export-summary-value">${entries.length}</span>
+      </div>
+      <div class="tm-export-summary-item">
+        <span class="tm-export-summary-label">Gerado em</span>
+        <span class="tm-export-summary-value">${escapeHtml(generatedAt)}</span>
+      </div>
+    </section>
+    <div class="tm-export-info">Página: ${escapeHtml(window.location.href)}</div>
+    ${body}
+  </main>
+  <script>
+    (function () {
+      function copyHtmlContent(button) {
+        const card = button.closest('.tm-export-card');
+        if (!card) return;
+        const content = card.querySelector('.tm-export-content');
+        if (!content) return;
+        const html = content.innerHTML;
+        const text = content.innerText;
+
+        function markDone(message) {
+          const previous = button.textContent;
+          button.textContent = message;
+          button.disabled = true;
+          window.setTimeout(function () {
+            button.textContent = previous;
+            button.disabled = false;
+          }, 1200);
+        }
+
+        if (navigator.clipboard && navigator.clipboard.write) {
+          const items = [
+            new ClipboardItem({
+              'text/html': new Blob([html], { type: 'text/html' }),
+              'text/plain': new Blob([text], { type: 'text/plain' })
+            })
+          ];
+          navigator.clipboard.write(items).then(function () {
+            markDone('Copiado');
+          }).catch(function () {
+            fallbackCopy(html, text);
+          });
+          return;
+        }
+
+        fallbackCopy(html, text);
+
+        function fallbackCopy(htmlValue, textValue) {
+          var fallback = document.createElement('textarea');
+          fallback.value = textValue;
+          fallback.setAttribute('readonly', 'readonly');
+          fallback.style.position = 'fixed';
+          fallback.style.top = '-9999px';
+          fallback.style.left = '-9999px';
+          document.body.appendChild(fallback);
+          fallback.select();
+          try {
+            document.execCommand('copy');
+            markDone('Copiado');
+          } catch (_) {
+            markDone('Falhou');
+          } finally {
+            fallback.remove();
+          }
+        }
+      }
+
+      document.addEventListener('click', function (event) {
+        var button = event.target.closest('.tm-export-copy');
+        if (!button) return;
+        copyHtmlContent(button);
+      });
+    })();
+  </script>
+</body>
+</html>`;
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `salic-rascunhos-${projectId}-${stamp}.html`;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   function clearUiMemoryCache() {
@@ -888,6 +1524,24 @@
       hideSettingsMenu();
     });
 
+    const exportButton = document.createElement('button');
+    exportButton.type = 'button';
+    exportButton.textContent = 'Exportar TXT';
+    exportButton.className = 'tm-salic-btn tm-salic-btn-secondary';
+    exportButton.addEventListener('click', () => {
+      exportProjectTexts();
+      hideSettingsMenu();
+    });
+
+    const exportHtmlButton = document.createElement('button');
+    exportHtmlButton.type = 'button';
+    exportHtmlButton.textContent = 'Exportar HTML';
+    exportHtmlButton.className = 'tm-salic-btn tm-salic-btn-secondary';
+    exportHtmlButton.addEventListener('click', () => {
+      exportProjectHtml();
+      hideSettingsMenu();
+    });
+
     const autoSaveToggle = createSettingToggle('Autosave', 'Salva textos longos enquanto voce digita.', isAutoSaveEnabled(), (checked) => {
       setSetting(CONFIG.autoSaveKey, checked);
       if (checked) {
@@ -912,6 +1566,8 @@
       }
     });
 
+      menu.appendChild(exportButton);
+      menu.appendChild(exportHtmlButton);
     const reactSelectToggle = createSettingToggle('Busca em listas', 'Troca selects grandes por listas com busca.', isReactSelectEnabled(), (checked) => {
       setSetting(CONFIG.reactSelectKey, checked);
     });
