@@ -246,6 +246,18 @@
   min-width: 0;
   position: relative;
 }
+.tm-reactselect-wrapper::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 0;
+  width: 3px;
+  border-radius: 3px;
+  background: #0d6efd;
+  z-index: 1;
+  pointer-events: none;
+}
 `;
     document.head.appendChild(style);
   }

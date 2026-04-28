@@ -516,27 +516,13 @@
 [data-tm-reactselect-host="1"] {
   position: relative;
 }
-.tm-reactselect-wrapper::before,
-[data-tm-reactselect-host="1"]::before {
-  content: "\f52a";
-  position: absolute;
-  left: .8rem;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #6c757d;
-  font-family: 'bootstrap-icons';
-  font-size: 1rem;
-  line-height: 1;
-  pointer-events: none;
-  z-index: 1;
-}
 .tm-reactselect-wrapper input[type="text"],
 [data-tm-reactselect-host="1"] input[type="text"],
 input[type="text"][role="combobox"],
 input[type="text"][aria-autocomplete],
 input[type="text"][aria-expanded],
 input[type="text"][aria-haspopup] {
-  padding-left: 2.1rem;
+  padding-left: 0.5rem;
 }
 @media (max-width: 576px) {
   .tm-salic-file-dropzone {
