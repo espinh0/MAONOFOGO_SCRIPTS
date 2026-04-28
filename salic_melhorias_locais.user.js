@@ -269,12 +269,14 @@
     }
     #atalhos .tm-salic-settings-host {
       margin: 0;
+      height: 100%;
+      align-items: stretch;
     }
     #atalhos #${CONFIG.settingsRootId} {
       margin: 0;
+      width: auto;
       height: 100%;
       align-items: stretch;
-      width: auto;
     }
     #${CONFIG.settingsButtonId} {
       display: inline-flex;
@@ -284,16 +286,18 @@
       white-space: normal;
     }
     #atalhos #${CONFIG.settingsButtonId} {
-      min-height: 64px;
-      padding: 0 .9rem;
+      height: 100%;
+      min-height: 0;
+      padding: 0 .7rem;
       border: 0;
       border-radius: 0;
       background: transparent;
       color: #fff;
-      font: 500 .92rem/1.2 Arial, sans-serif;
+      font: 500 .92rem/1 Arial, sans-serif;
       text-transform: none;
       letter-spacing: 0;
       width: auto;
+      white-space: nowrap;
     }
     #atalhos #${CONFIG.settingsButtonId}:hover,
     #atalhos #${CONFIG.settingsButtonId}:focus {
