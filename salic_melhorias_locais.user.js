@@ -34,6 +34,7 @@
     ignoreSelector: '.tm-localmem-ignore, [data-tm-localmem="off"]',
     reactSelectIgnoreSelector: '.tm-reactselect-wrapper, [data-tm-reactselect-host="1"]',
     settingsRootId: 'tm-salic-settings-root',
+    settingsHostId: 'tm-salic-settings-host',
     settingsButtonId: 'tm-salic-settings-button',
     settingsMenuId: 'tm-salic-settings-menu',
     customStyleId: 'tm-salic-custom-css',
@@ -261,12 +262,44 @@
       max-width: 100%;
       margin: .5rem 0;
     }
+    .tm-salic-settings-host {
+      display: inline-flex;
+      align-items: center;
+      list-style: none;
+    }
+    #atalhos .tm-salic-settings-host {
+      margin: 0;
+    }
+    #atalhos #${CONFIG.settingsRootId} {
+      margin: 0;
+      height: 100%;
+      align-items: stretch;
+      width: auto;
+    }
     #${CONFIG.settingsButtonId} {
       display: inline-flex;
       align-items: center;
       gap: .35rem;
       max-width: 100%;
       white-space: normal;
+    }
+    #atalhos #${CONFIG.settingsButtonId} {
+      min-height: 64px;
+      padding: 0 .9rem;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: #fff;
+      font: 500 .92rem/1.2 Arial, sans-serif;
+      text-transform: none;
+      letter-spacing: 0;
+      width: auto;
+    }
+    #atalhos #${CONFIG.settingsButtonId}:hover,
+    #atalhos #${CONFIG.settingsButtonId}:focus {
+      background: rgba(255, 255, 255, .12);
+      filter: none;
+      outline: none;
     }
     #${CONFIG.settingsMenuId} {
       position: fixed;
@@ -299,7 +332,6 @@
     }
     .tm-salic-btn-danger {
       width: 100%;
-      margin-bottom: .5rem;
       border-color: #dc3545;
       background: #fff;
       color: #dc3545;
@@ -327,6 +359,23 @@
       box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15);
       font-family: Arial, sans-serif;
       min-width: 14rem;
+    }
+    .tm-salic-settings-actions {
+      margin-top: .5rem;
+      padding-top: .5rem;
+      border-top: 1px solid #e9ecef;
+      display: flex;
+      flex-direction: column;
+      gap: .45rem;
+    }
+    .tm-salic-settings-actions-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: .45rem;
+    }
+    .tm-salic-settings-actions .tm-salic-btn {
+      width: 100%;
+      margin: 0;
     }
     .${CONFIG.statusClass} {
       display: flex;
@@ -1582,6 +1631,23 @@
   }
 
   function placeSettingsRoot(root) {
+    const shortcutsList = document.querySelector('#atalhos > ul');
+    if (shortcutsList) {
+      let host = document.getElementById(CONFIG.settingsHostId);
+      if (!host) {
+        host = document.createElement('li');
+        host.id = CONFIG.settingsHostId;
+        host.className = 'tm-salic-settings-host';
+      }
+      const sessionItem = document.querySelector('#cronometro-sessao')?.closest('li');
+      if (sessionItem && sessionItem.parentElement === shortcutsList) {
+        shortcutsList.insertBefore(host, sessionItem);
+      } else if (!host.parentElement) {
+        shortcutsList.appendChild(host);
+      }
+      host.appendChild(root);
+      return;
+    }
     const sidebarInfo = document.querySelector('#sidenav .sidebar-info');
     if (sidebarInfo) {
       sidebarInfo.appendChild(root);
@@ -1673,8 +1739,6 @@
       }
     });
 
-      menu.appendChild(exportButton);
-      menu.appendChild(exportHtmlButton);
     const reactSelectToggle = createSettingToggle('Busca em listas', 'Troca selects grandes por listas com busca.', isReactSelectEnabled(), (checked) => {
       setSetting(CONFIG.reactSelectKey, checked);
     });
@@ -1693,6 +1757,15 @@
         setNumberSetting(CONFIG.reactSelectMinOptionsKey, value, CONFIG.reactSelectMinOptionsMin, CONFIG.reactSelectMinOptionsMax);
       }
     );
+
+    const actionsWrap = document.createElement('div');
+    actionsWrap.className = 'tm-salic-settings-actions';
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'tm-salic-settings-actions-row';
+    actionsRow.appendChild(exportButton);
+    actionsRow.appendChild(exportHtmlButton);
+    actionsWrap.appendChild(actionsRow);
+    actionsWrap.appendChild(clearButton);
 
     button.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -1719,13 +1792,13 @@
       window.addEventListener('scroll', hideSettingsMenu);
     }
 
-    menu.appendChild(clearButton);
     menu.appendChild(autoSaveToggle);
     menu.appendChild(hideDeleteToggle);
     menu.appendChild(uiMemoryToggle);
     menu.appendChild(reactSelectToggle);
     menu.appendChild(reactSelectOriginalToggle);
     menu.appendChild(reactSelectMinOptions);
+    menu.appendChild(actionsWrap);
     root.appendChild(button);
     placeSettingsRoot(root);
     document.body.appendChild(menu);
