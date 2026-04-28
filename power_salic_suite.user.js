@@ -62,12 +62,19 @@
     });
   }
 
+  function runScript(source, url) {
+    const script = document.createElement('script');
+    script.textContent = `${source}\n//# sourceURL=${url}`;
+    (document.head || document.documentElement).appendChild(script);
+    script.remove();
+  }
+
   async function loadScripts() {
     const forceToken = getForceToken();
     for (const baseUrl of CONFIG.scriptUrls) {
       const url = forceToken ? `${baseUrl}?v=${encodeURIComponent(forceToken)}` : baseUrl;
       const source = await fetchText(url);
-      (0, eval)(`${source}\n//# sourceURL=${url}`);
+      runScript(source, url);
     }
   }
 
