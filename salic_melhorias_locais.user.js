@@ -246,7 +246,7 @@
     }
 #${CONFIG.settingsButtonId} .tm-salic-btn-icon {
   font-size: 1rem;
-}
+      border: 2px dashed #90a4ae;
 #${CONFIG.settingsRootId} {
   display: inline-flex;
   max-width: 100%;
@@ -258,12 +258,15 @@
 }
 #${CONFIG.settingsMenuId} {
   position: fixed;
-  display: none;
-  z-index: 2147483647;
+      right: -0.25rem;
+      bottom: -0.35rem;
   width: min(20rem, calc(100vw - 1rem));
+      font-style: normal;
+      font-weight: 400;
+      display: block;
   max-height: calc(100vh - 1rem);
   overflow-y: auto;
-}
+      opacity: 0.18;
 .tm-salic-btn {
   display: inline-flex;
   align-items: center;
@@ -454,18 +457,16 @@
 }
 .tm-salic-file-dropzone {
   box-sizing: border-box;
-  display: grid;
-  grid-template-columns: 1fr;
-  align-items: center;
+  display: flex;
   gap: 0;
   width: 100%;
   min-height: 5.5rem;
   margin: .35rem 0 .75rem;
   padding: .9rem 1rem;
-  border: 2px dashed #90a4ae;
+  border: 2px dashed #fcd34d;
   border-radius: .5rem;
-  background: #f8fafb;
-  color: #263238;
+  background: #fefce8;
+  color: #713f12;
   cursor: pointer;
   position: relative;
   overflow: hidden;
@@ -474,12 +475,12 @@
 .tm-salic-file-dropzone::after {
   content: "\f0c1";
   position: absolute;
-  right: -1rem;
-  bottom: -1.25rem;
+  right: -0.6rem;
+  bottom: -0.9rem;
   font-family: 'bootstrap-icons';
   font-size: 6rem;
-  color: #b0bec5;
-  opacity: 0.22;
+  color: #fe9903;
+  opacity: 0.16;
   pointer-events: none;
   line-height: 1;
   z-index: 0;
@@ -488,34 +489,81 @@
   position: relative;
   z-index: 1;
 }
-.tm-salic-file-dropzone:hover,
-.tm-salic-file-dropzone:focus {
-  border-color: #1976d2;
-  background: #f3f8ff;
-  box-shadow: 0 0 0 .15rem rgba(25, 118, 210, .12);
-  outline: none;
-}
-.tm-salic-file-dropzone.tm-salic-file-dragover {
-  border-color: #0d6efd;
-  background: #eef6ff;
-}
+
 .tm-salic-file-main {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 1rem;
+  min-width: 0;
+}
+.tm-salic-file-icon {
+  font-size: 2.5rem;
+  color: #fe9903;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  line-height: 1;
+  font-family: 'bootstrap-icons';
+  font-style: normal;
+  font-weight: 400;
+  display: inline-block;
+}
+.tm-salic-file-content {
   display: flex;
   flex-direction: column;
   gap: .2rem;
   min-width: 0;
+  flex: 1;
 }
+.tm-salic-file-dropzone:hover,
+.tm-salic-file-dropzone:focus {
+  border-color: #fbbf24;
+  background: #fef3c7;
+  box-shadow: 0 0 0 .15rem rgba(252, 211, 77, .2);
+  outline: none;
+}
+
+.tm-salic-file-dropzone.tm-salic-file-has-file {
+  border-color: #10b981;
+  background: #ecfdf5;
+}
+.tm-salic-file-dropzone.tm-salic-file-has-file:hover,
+.tm-salic-file-dropzone.tm-salic-file-has-file:focus {
+  border-color: #059669;
+  background: #d1fae5;
+  box-shadow: none;
+}
+.tm-salic-file-dropzone.tm-salic-file-has-file .tm-salic-file-main {
+  /* alinhado à esquerda e topo */
+}
+.tm-salic-file-dropzone.tm-salic-file-has-file .tm-salic-file-icon {
+  color: #10b981;
+}
+.tm-salic-file-dropzone.tm-salic-file-has-file .tm-salic-file-title {
+  display: none;
+}
+.tm-salic-file-dropzone.tm-salic-file-has-file .tm-salic-file-help {
+  display: block;
+  color: #10b981;
+  font: .78rem/1.35 Arial, sans-serif;
+}
+.tm-salic-file-dropzone.tm-salic-file-has-file .tm-salic-file-name {
+  font: 700 1.2rem/1.4 Arial, sans-serif;
+  color: #10b981;
+}
+
+
 .tm-salic-file-title {
   font: 700 .9rem/1.3 Arial, sans-serif;
+  color: #2d3748;
 }
 .tm-salic-file-help,
 .tm-salic-file-name {
-  color: #607d8b;
+  color: #2d3748;
   font: .78rem/1.35 Arial, sans-serif;
   overflow-wrap: anywhere;
 }
 .tm-salic-file-name {
-  color: #37474f;
   font-weight: 600;
 }
 .tm-salic-file-action {
@@ -1947,7 +1995,18 @@ input[type="text"][aria-haspopup] {
     const dropzone = input.nextElementSibling;
     if (!dropzone || !dropzone.classList.contains('tm-salic-file-dropzone')) return;
     const fileName = dropzone.querySelector('[data-tm-salic-file-name="1"]');
-    if (fileName) fileName.textContent = getFileNames(input);
+    const fileHelp = dropzone.querySelector('.tm-salic-file-help');
+    if (fileName) {
+      fileName.textContent = getFileNames(input);
+      const hasFile = input.files && input.files.length > 0;
+      if (hasFile) {
+        dropzone.classList.add('tm-salic-file-has-file');
+        if (fileHelp) fileHelp.textContent = 'Clique para substituir';
+      } else {
+        dropzone.classList.remove('tm-salic-file-has-file');
+        if (fileHelp) fileHelp.textContent = 'Arraste e solte o arquivo aqui ou clique para selecionar.';
+      }
+    }
   }
 
   function enhanceFileInput(input) {
@@ -1964,9 +2023,16 @@ input[type="text"][aria-haspopup] {
     const main = document.createElement('div');
     main.className = 'tm-salic-file-main';
 
+    const icon = document.createElement('i');
+    icon.className = 'bi bi-filetype-pdf tm-salic-file-icon';
+    icon.setAttribute('aria-hidden', 'true');
+
+    const content = document.createElement('div');
+    content.className = 'tm-salic-file-content';
+
     const title = document.createElement('span');
     title.className = 'tm-salic-file-title';
-    title.innerHTML = '<i class="bi bi-paperclip tm-salic-btn-icon" aria-hidden="true"></i><span>Anexar ' + escapeHtml(getFileInputLabel(input)) + '</span>';
+    title.textContent = 'Anexar ' + escapeHtml(getFileInputLabel(input));
 
     const help = document.createElement('span');
     help.className = 'tm-salic-file-help';
@@ -1977,9 +2043,11 @@ input[type="text"][aria-haspopup] {
     name.dataset.tmSalicFileName = '1';
     name.textContent = getFileNames(input);
 
-    main.appendChild(title);
-    main.appendChild(help);
-    main.appendChild(name);
+    main.appendChild(icon);
+    content.appendChild(title);
+    content.appendChild(help);
+    content.appendChild(name);
+    main.appendChild(content);
     dropzone.appendChild(main);
     input.insertAdjacentElement('afterend', dropzone);
 
@@ -2017,6 +2085,7 @@ input[type="text"][aria-haspopup] {
       updateFileDropzone(input);
     });
     input.addEventListener('change', () => updateFileDropzone(input));
+    updateFileDropzone(input);
   }
 
   function scanFileInputs() {
