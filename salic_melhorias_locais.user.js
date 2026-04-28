@@ -270,8 +270,6 @@
     }
     #${CONFIG.settingsMenuId} {
       position: fixed;
-      right: -0.25rem;
-      bottom: -0.35rem;
       width: min(20rem, calc(100vw - 1rem));
       font-style: normal;
       font-weight: 400;
@@ -1552,6 +1550,8 @@
     const rect = button.getBoundingClientRect();
     const gap = 6;
     const margin = 8;
+    menu.style.right = 'auto';
+    menu.style.bottom = 'auto';
     const menuWidth = Math.min(320, window.innerWidth - margin * 2);
     menu.style.width = `${menuWidth}px`;
     menu.style.display = 'block';
@@ -1570,7 +1570,13 @@
 
   function hideSettingsMenu() {
     const menu = document.getElementById(CONFIG.settingsMenuId);
-    if (menu) menu.style.display = 'none';
+    if (menu) {
+      menu.style.display = 'none';
+      menu.style.top = '';
+      menu.style.left = '';
+      menu.style.right = 'auto';
+      menu.style.bottom = 'auto';
+    }
     const button = document.getElementById(CONFIG.settingsButtonId);
     if (button) button.setAttribute('aria-expanded', 'false');
   }
