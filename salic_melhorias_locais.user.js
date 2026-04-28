@@ -69,6 +69,7 @@
     filterRestoreTimer: null,
     filterInteractionUntil: 0,
     filterListenersReady: false,
+    settingsListenersReady: false,
     settings: Object.create(null)
   };
 
@@ -274,7 +275,7 @@
       width: min(20rem, calc(100vw - 1rem));
       font-style: normal;
       font-weight: 400;
-      display: block;
+      display: none;
       max-height: calc(100vh - 1rem);
       overflow-y: auto;
       z-index: 2147483647;
@@ -1591,7 +1592,12 @@
   }
 
   function addSettingsMenu() {
-    if (document.getElementById(CONFIG.settingsRootId)) return;
+    const existingRoot = document.getElementById(CONFIG.settingsRootId);
+    const existingMenu = document.getElementById(CONFIG.settingsMenuId);
+    if (existingRoot && existingMenu) return;
+    if (existingRoot && !existingMenu) existingRoot.remove();
+    if (existingMenu && !existingRoot) existingMenu.remove();
+
     injectStyles();
     const root = document.createElement('div');
     root.id = CONFIG.settingsRootId;
@@ -1696,11 +1702,18 @@
       }
     });
     menu.addEventListener('click', (event) => event.stopPropagation());
-    document.addEventListener('click', () => {
-      hideSettingsMenu();
-    });
-    window.addEventListener('resize', hideSettingsMenu);
-    window.addEventListener('scroll', hideSettingsMenu, true);
+    if (!STATE.settingsListenersReady) {
+      STATE.settingsListenersReady = true;
+      document.addEventListener('click', (event) => {
+        const activeMenu = document.getElementById(CONFIG.settingsMenuId);
+        const activeButton = document.getElementById(CONFIG.settingsButtonId);
+        if (!activeMenu || activeMenu.style.display === 'none') return;
+        if ((activeButton && activeButton.contains(event.target)) || activeMenu.contains(event.target)) return;
+        hideSettingsMenu();
+      });
+      window.addEventListener('resize', hideSettingsMenu);
+      window.addEventListener('scroll', hideSettingsMenu);
+    }
 
     menu.appendChild(clearButton);
     menu.appendChild(autoSaveToggle);

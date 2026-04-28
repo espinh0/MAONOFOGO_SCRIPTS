@@ -309,10 +309,7 @@
     const rawValue = option.getAttribute('value');
     const hasExplicitValue = rawValue !== null;
     const value = hasExplicitValue ? rawValue : option.value;
-    if (value !== '' && hasExplicitValue) return false;
-    if (option.disabled || option.hidden) return true;
-    if (option.getAttribute('data-placeholder') === 'true') return true;
-    return true;
+    return value === '';
   }
 
   function buildOptions(select) {
