@@ -3,6 +3,8 @@
 // @namespace    power-salic
 // @version      1.0.0
 // @description  Carrega automaticamente o Power SALIC e os aprimoramentos de ReactSelect em um unico userscript.
+// @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js
+// @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
 // @match        https://cultura.gov.br/*

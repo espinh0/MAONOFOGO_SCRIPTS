@@ -202,7 +202,7 @@
   }
 
   function isReactSelectOriginalVisible() {
-    return getSetting(CONFIG.reactSelectShowOriginalKey, true);
+    return getSetting(CONFIG.reactSelectShowOriginalKey, false);
   }
 
   function getReactSelectMinOptions() {
