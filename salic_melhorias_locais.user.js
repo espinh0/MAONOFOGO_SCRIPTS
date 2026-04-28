@@ -455,9 +455,9 @@
 .tm-salic-file-dropzone {
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: 1fr;
   align-items: center;
-  gap: 1rem;
+  gap: 0;
   width: 100%;
   min-height: 5.5rem;
   margin: .35rem 0 .75rem;
@@ -468,21 +468,25 @@
   color: #263238;
   cursor: pointer;
   position: relative;
-  overflow: visible;
+  overflow: hidden;
   transition: border-color .15s ease-in-out, background-color .15s ease-in-out, box-shadow .15s ease-in-out;
 }
-.tm-salic-file-dropzone::before {
+.tm-salic-file-dropzone::after {
   content: "\f0c1";
+  position: absolute;
+  right: -1rem;
+  bottom: -1.25rem;
   font-family: 'bootstrap-icons';
-  font-size: 3.5rem;
+  font-size: 6rem;
   color: #b0bec5;
-  opacity: 0.4;
+  opacity: 0.22;
   pointer-events: none;
   line-height: 1;
-  flex-shrink: 0;
+  z-index: 0;
 }
-.tm-salic-file-dropzone::after {
-  display: none;
+.tm-salic-file-main {
+  position: relative;
+  z-index: 1;
 }
 .tm-salic-file-dropzone:hover,
 .tm-salic-file-dropzone:focus {
