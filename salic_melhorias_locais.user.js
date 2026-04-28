@@ -48,6 +48,7 @@
     reactSelectMinOptionsMax: 99,
     collapsibleStatePrefix: 'tm-salic-collapsible-state',
     tabStatePrefix: 'tm-salic-tab-state',
+    filterStatePrefix: 'tm-salic-filter-state',
     settingEventName: 'tm-salic-setting-change',
     settingOn: '1',
     settingOff: '0'
@@ -65,6 +66,9 @@
     tabRestoreTimer: null,
     tabInteractionUntil: 0,
     tabListenersReady: false,
+    filterRestoreTimer: null,
+    filterInteractionUntil: 0,
+    filterListenersReady: false,
     settings: Object.create(null)
   };
 
@@ -1372,7 +1376,8 @@ input[type="text"][aria-haspopup] {
     const projectId = getProjectId();
     const uiPrefixes = [
       `${CONFIG.collapsibleStatePrefix}::${projectId}::`,
-      `${CONFIG.tabStatePrefix}::${projectId}::`
+      `${CONFIG.tabStatePrefix}::${projectId}::`,
+      `${CONFIG.filterStatePrefix}::${projectId}::`
     ];
     storageListKeys().forEach((key) => {
       if (typeof key !== 'string') return;
@@ -1387,6 +1392,10 @@ input[type="text"][aria-haspopup] {
     if (STATE.tabRestoreTimer) {
       clearTimeout(STATE.tabRestoreTimer);
       STATE.tabRestoreTimer = null;
+    }
+    if (STATE.filterRestoreTimer) {
+      clearTimeout(STATE.filterRestoreTimer);
+      STATE.filterRestoreTimer = null;
     }
   }
 
@@ -1605,7 +1614,7 @@ input[type="text"][aria-haspopup] {
       applyDeleteButtonVisibility(checked);
     });
 
-    const uiMemoryToggle = createSettingToggle('Lembrar tela', 'Lembra abas e menus abertos. Desativar limpa so essa memoria.', isUiMemoryEnabled(), (checked) => {
+    const uiMemoryToggle = createSettingToggle('Lembrar tela', 'Lembra abas, menus abertos e filtros. Desativar limpa so essa memoria.', isUiMemoryEnabled(), (checked) => {
       setSetting(CONFIG.uiMemoryKey, checked);
       if (!checked) {
         clearUiMemoryCache();
@@ -2380,6 +2389,130 @@ input[type="text"][aria-haspopup] {
     }, 1000);
   }
 
+  function getFilterStateKey(filterName) {
+    return `${CONFIG.filterStatePrefix}::${getProjectId()}::${filterName}`;
+  }
+
+  function getProposalFilters() {
+    const filters = {};
+    const mechanismSelect = document.querySelector('input[aria-label="Mecanismo"]');
+    const proponentSelect = document.querySelector('input[aria-label="Proponentes"]');
+    if (mechanismSelect) {
+      const display = mechanismSelect.parentElement?.querySelector('.v-select__selection');
+      if (display) filters.mechanism = display.textContent.trim();
+    }
+    if (proponentSelect) {
+      const display = proponentSelect.parentElement?.querySelector('.v-select__selection');
+      if (display) filters.proponent = display.textContent.trim();
+    }
+    return filters;
+  }
+
+  function getStoredFilters() {
+    if (!isUiMemoryEnabled()) return {};
+    const stored = {};
+    const mechanismKey = getFilterStateKey('mechanism');
+    const proponentKey = getFilterStateKey('proponent');
+    const mechanismValue = storageGet(mechanismKey);
+    const proponentValue = storageGet(proponentKey);
+    if (mechanismValue) stored.mechanism = mechanismValue;
+    if (proponentValue) stored.proponent = proponentValue;
+    return stored;
+  }
+
+  function saveProposalFilters() {
+    if (!isUiMemoryEnabled()) return;
+    const filters = getProposalFilters();
+    if (filters.mechanism) storageSet(getFilterStateKey('mechanism'), filters.mechanism);
+    if (filters.proponent) storageSet(getFilterStateKey('proponent'), filters.proponent);
+  }
+
+  function restoreProposalFilters() {
+    if (!isUiMemoryEnabled()) return;
+    if (Date.now() < STATE.filterInteractionUntil) return;
+    const stored = getStoredFilters();
+    if (!stored.mechanism && !stored.proponent) return;
+
+    const mechanismInput = document.querySelector('input[aria-label="Mecanismo"]');
+    const proponentInput = document.querySelector('input[aria-label="Proponentes"]');
+
+    if (mechanismInput && stored.mechanism) {
+      const mechanismMenu = mechanismInput.closest('.v-input')?.querySelector('.v-menu__content');
+      if (mechanismMenu && mechanismMenu.style.display !== 'none') {
+        const option = Array.from(mechanismMenu.querySelectorAll('.v-list__tile__title')).find(
+          (el) => el.textContent.trim() === stored.mechanism
+        );
+        if (option) {
+          setTimeout(() => {
+            option.closest('.v-list__tile')?.click();
+          }, 50);
+        }
+      }
+    }
+
+    if (proponentInput && stored.proponent) {
+      const proponentMenu = proponentInput.closest('.v-input')?.querySelector('.v-menu__content');
+      if (proponentMenu && proponentMenu.style.display !== 'none') {
+        const option = Array.from(proponentMenu.querySelectorAll('.v-list__tile__title')).find(
+          (el) => el.textContent.trim() === stored.proponent
+        );
+        if (option) {
+          setTimeout(() => {
+            option.closest('.v-list__tile')?.click();
+          }, 50);
+        }
+      }
+    }
+  }
+
+  function scheduleFilterRestore() {
+    if (!isUiMemoryEnabled()) return;
+    if (STATE.filterRestoreTimer) clearTimeout(STATE.filterRestoreTimer);
+    const interactionDelay = Math.max(0, STATE.filterInteractionUntil - Date.now() + 100);
+    STATE.filterRestoreTimer = setTimeout(() => {
+      STATE.filterRestoreTimer = null;
+      restoreProposalFilters();
+    }, Math.max(350, interactionDelay));
+  }
+
+  function setupFilterMemory() {
+    if (STATE.filterListenersReady) {
+      scheduleFilterRestore();
+      return;
+    }
+    STATE.filterListenersReady = true;
+
+    document.addEventListener('change', (event) => {
+      const input = event.target;
+      if (input.getAttribute('aria-label') === 'Mecanismo' || input.getAttribute('aria-label') === 'Proponentes') {
+        STATE.filterInteractionUntil = Date.now() + 1200;
+        saveProposalFilters();
+      }
+    }, false);
+
+    document.addEventListener('click', (event) => {
+      const listItem = event.target.closest('.v-list__tile');
+      if (listItem) {
+        const title = listItem.querySelector('.v-list__tile__title');
+        if (title) {
+          const menu = listItem.closest('.v-menu__content');
+          if (menu) {
+            const input = menu.previousElementSibling?.querySelector('input[aria-label]');
+            if (input && (input.getAttribute('aria-label') === 'Mecanismo' || input.getAttribute('aria-label') === 'Proponentes')) {
+              STATE.filterInteractionUntil = Date.now() + 1200;
+              setTimeout(saveProposalFilters, 100);
+            }
+          }
+        }
+      }
+    }, false);
+
+    scheduleFilterRestore();
+    setTimeout(() => {
+      restoreProposalFilters();
+    }, 1500);
+  }
+
   function isOwnMutation(mutation) {
     const nodes = [mutation.target].concat(Array.from(mutation.addedNodes || []));
     return nodes.every((node) => {
@@ -2404,6 +2537,7 @@ input[type="text"][aria-haspopup] {
       addSettingsMenu();
       setupCollapsibleMemory();
       setupTabMemory();
+      setupFilterMemory();
     }, 200);
   }
 
@@ -2415,6 +2549,7 @@ input[type="text"][aria-haspopup] {
     addSettingsMenu();
     setupCollapsibleMemory();
     setupTabMemory();
+    setupFilterMemory();
 
     const observer = new MutationObserver((mutations) => {
       if (mutations.length && mutations.every(isOwnMutation)) return;
