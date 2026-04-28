@@ -466,7 +466,6 @@
   border: 2px dashed #fcd34d;
   border-radius: .5rem;
   background: #fefce8;
-  color: #713f12;
   cursor: pointer;
   position: relative;
   overflow: hidden;
@@ -488,9 +487,6 @@
 .tm-salic-file-main {
   position: relative;
   z-index: 1;
-}
-
-.tm-salic-file-main {
   display: flex;
   flex-direction: row;
   align-items: flex-start;
