@@ -268,6 +268,7 @@
       list-style: none;
     }
     #atalhos .tm-salic-settings-host {
+      height: 100%;
     }
     #atalhos #${CONFIG.settingsRootId} {
       margin: 0;
