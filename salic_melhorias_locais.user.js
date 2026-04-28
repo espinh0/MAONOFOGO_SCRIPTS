@@ -53,7 +53,8 @@
     settingEventName: 'tm-salic-setting-change',
     settingOn: '1',
     settingOff: '0',
-    suiteInstallUrl: 'https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js'
+    suiteInstallUrl: 'https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js',
+    suiteForceParam: 'tm_ps_update'
   };
 
   const STATE = {
@@ -192,11 +193,16 @@
     return nextValue;
   }
 
-  function openScriptUpdateInstaller() {
-    const installUrl = `${CONFIG.suiteInstallUrl}?install=${Date.now()}`;
-    const opened = window.open(installUrl, '_blank', 'noopener,noreferrer');
-    if (!opened) {
-      window.location.href = installUrl;
+  function refreshScriptsWithoutReinstall() {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set(CONFIG.suiteForceParam, String(Date.now()));
+      window.location.replace(url.toString());
+    } catch (_) {
+      const base = window.location.href.split('#')[0];
+      const hash = window.location.hash || '';
+      const sep = base.includes('?') ? '&' : '?';
+      window.location.replace(`${base}${sep}${CONFIG.suiteForceParam}=${Date.now()}${hash}`);
     }
   }
 
@@ -1731,7 +1737,7 @@
     updateScriptsButton.innerHTML = '<i class="bi bi-arrow-repeat tm-salic-btn-icon" aria-hidden="true"></i><span>Atualizar scripts</span>';
     updateScriptsButton.className = 'tm-salic-btn tm-salic-btn-secondary';
     updateScriptsButton.addEventListener('click', () => {
-      openScriptUpdateInstaller();
+      refreshScriptsWithoutReinstall();
       hideSettingsMenu();
     });
 
