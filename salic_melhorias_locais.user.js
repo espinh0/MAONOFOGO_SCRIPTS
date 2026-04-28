@@ -52,7 +52,8 @@
     filterStatePrefix: 'tm-salic-filter-state',
     settingEventName: 'tm-salic-setting-change',
     settingOn: '1',
-    settingOff: '0'
+    settingOff: '0',
+    suiteInstallUrl: 'https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js'
   };
 
   const STATE = {
@@ -189,6 +190,14 @@
       }));
     } catch (_) {}
     return nextValue;
+  }
+
+  function openScriptUpdateInstaller() {
+    const installUrl = `${CONFIG.suiteInstallUrl}?install=${Date.now()}`;
+    const opened = window.open(installUrl, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      window.location.href = installUrl;
+    }
   }
 
   function isAutoSaveEnabled() {
@@ -1717,6 +1726,15 @@
       hideSettingsMenu();
     });
 
+    const updateScriptsButton = document.createElement('button');
+    updateScriptsButton.type = 'button';
+    updateScriptsButton.innerHTML = '<i class="bi bi-arrow-repeat tm-salic-btn-icon" aria-hidden="true"></i><span>Atualizar scripts</span>';
+    updateScriptsButton.className = 'tm-salic-btn tm-salic-btn-secondary';
+    updateScriptsButton.addEventListener('click', () => {
+      openScriptUpdateInstaller();
+      hideSettingsMenu();
+    });
+
     const autoSaveToggle = createSettingToggle('Autosave', 'Salva textos longos enquanto voce digita.', isAutoSaveEnabled(), (checked) => {
       setSetting(CONFIG.autoSaveKey, checked);
       if (checked) {
@@ -1767,6 +1785,7 @@
     actionsRow.appendChild(exportButton);
     actionsRow.appendChild(exportHtmlButton);
     actionsWrap.appendChild(actionsRow);
+    actionsWrap.appendChild(updateScriptsButton);
     actionsWrap.appendChild(clearButton);
 
     button.addEventListener('click', (event) => {
