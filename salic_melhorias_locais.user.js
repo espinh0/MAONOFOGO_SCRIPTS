@@ -214,12 +214,35 @@
     );
   }
 
+  function injectBootstrapIcons() {
+    const id = 'tm-salic-bootstrap-icons';
+    if (document.getElementById(id)) return;
+    const link = document.createElement('link');
+    link.id = id;
+    link.rel = 'stylesheet';
+    link.href = 'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css';
+    link.referrerPolicy = 'no-referrer';
+    document.head.appendChild(link);
+  }
+
   function injectStyles() {
     if (!document.head) return;
     if (document.getElementById(CONFIG.customStyleId)) return;
+    injectBootstrapIcons();
     const style = document.createElement('style');
     style.id = CONFIG.customStyleId;
     style.textContent = `
+    .tm-salic-btn-icon {
+      font-size: .95em;
+      line-height: 1;
+    }
+    .tm-salic-btn .tm-salic-btn-icon + span,
+    .tm-salic-btn .tm-salic-btn-icon + .tm-salic-btn-label {
+      white-space: nowrap;
+    }
+#${CONFIG.settingsButtonId} .tm-salic-btn-icon {
+  font-size: 1rem;
+}
 #${CONFIG.settingsRootId} {
   display: inline-flex;
   max-width: 100%;
@@ -485,6 +508,32 @@
   font: 700 .8rem/1 Arial, sans-serif;
   white-space: nowrap;
 }
+.tm-reactselect-wrapper,
+[data-tm-reactselect-host="1"] {
+  position: relative;
+}
+.tm-reactselect-wrapper::before,
+[data-tm-reactselect-host="1"]::before {
+  content: "\f52a";
+  position: absolute;
+  left: .8rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #6c757d;
+  font-family: 'bootstrap-icons';
+  font-size: 1rem;
+  line-height: 1;
+  pointer-events: none;
+  z-index: 1;
+}
+.tm-reactselect-wrapper input[type="text"],
+[data-tm-reactselect-host="1"] input[type="text"],
+input[type="text"][role="combobox"],
+input[type="text"][aria-autocomplete],
+input[type="text"][aria-expanded],
+input[type="text"][aria-haspopup] {
+  padding-left: 2.1rem;
+}
 @media (max-width: 576px) {
   .tm-salic-file-dropzone {
     grid-template-columns: 1fr;
@@ -680,7 +729,7 @@
       text.dataset.tmLocalmemStatusText = '1';
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.textContent = 'Recuperar Rascunho';
+      btn.innerHTML = '<i class="bi bi-arrow-counterclockwise tm-salic-btn-icon" aria-hidden="true"></i><span>Recuperar Rascunho</span>';
       btn.className = 'tm-salic-btn tm-salic-btn-secondary';
       btn.dataset.tmLocalmemRestore = '1';
       status.appendChild(text);
@@ -1503,7 +1552,7 @@
     const button = document.createElement('button');
     button.id = CONFIG.settingsButtonId;
     button.type = 'button';
-    button.textContent = 'Configuracao';
+    button.innerHTML = '<i class="bi bi-gear-fill tm-salic-btn-icon" aria-hidden="true"></i><span>Configuracao</span>';
     button.className = 'tm-salic-btn tm-salic-dropdown-toggle';
     button.setAttribute('aria-expanded', 'false');
     button.setAttribute('aria-controls', CONFIG.settingsMenuId);
@@ -1515,7 +1564,7 @@
 
     const clearButton = document.createElement('button');
     clearButton.type = 'button';
-    clearButton.textContent = 'Limpar rascunhos salvos';
+    clearButton.innerHTML = '<i class="bi bi-trash3 tm-salic-btn-icon" aria-hidden="true"></i><span>Limpar rascunhos salvos</span>';
     clearButton.className = 'tm-salic-btn tm-salic-btn-danger';
     clearButton.addEventListener('click', () => {
       const ok = window.confirm('Limpar todos os dados salvos deste projeto?');
@@ -1526,7 +1575,7 @@
 
     const exportButton = document.createElement('button');
     exportButton.type = 'button';
-    exportButton.textContent = 'Exportar TXT';
+    exportButton.innerHTML = '<i class="bi bi-filetype-txt tm-salic-btn-icon" aria-hidden="true"></i><span>Exportar TXT</span>';
     exportButton.className = 'tm-salic-btn tm-salic-btn-secondary';
     exportButton.addEventListener('click', () => {
       exportProjectTexts();
@@ -1535,7 +1584,7 @@
 
     const exportHtmlButton = document.createElement('button');
     exportHtmlButton.type = 'button';
-    exportHtmlButton.textContent = 'Exportar HTML';
+    exportHtmlButton.innerHTML = '<i class="bi bi-filetype-html tm-salic-btn-icon" aria-hidden="true"></i><span>Exportar HTML</span>';
     exportHtmlButton.className = 'tm-salic-btn tm-salic-btn-secondary';
     exportHtmlButton.addEventListener('click', () => {
       exportProjectHtml();
@@ -1920,7 +1969,7 @@
 
     const title = document.createElement('span');
     title.className = 'tm-salic-file-title';
-    title.textContent = `Anexar ${getFileInputLabel(input)}`;
+    title.innerHTML = '<i class="bi bi-paperclip tm-salic-btn-icon" aria-hidden="true"></i><span>Anexar ' + escapeHtml(getFileInputLabel(input)) + '</span>';
 
     const help = document.createElement('span');
     help.className = 'tm-salic-file-help';
@@ -1933,7 +1982,7 @@
 
     const action = document.createElement('span');
     action.className = 'tm-salic-file-action';
-    action.textContent = 'Escolher arquivo';
+    action.innerHTML = '<i class="bi bi-folder2-open tm-salic-btn-icon" aria-hidden="true"></i><span>Escolher arquivo</span>';
 
     main.appendChild(title);
     main.appendChild(help);
