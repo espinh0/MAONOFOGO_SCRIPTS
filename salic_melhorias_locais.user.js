@@ -2056,10 +2056,10 @@
           const plain = event.clipboardData.getData('text/plain');
           const payload = html || (plain ? plainTextToHtml(plain) : '');
           if (!payload) return;
-          event.preventDefault();
-          event.stopPropagation();
           const ok = insertHtmlIntoDocument(doc, payload);
           if (!ok) return;
+          event.preventDefault();
+          event.stopPropagation();
           const value = getFieldValue(field);
           const comparable = normalizeValue(value);
           STATE.userEdited.set(field, true);
