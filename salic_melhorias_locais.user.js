@@ -47,6 +47,7 @@
     reactSelectMinOptionsDefault: 10,
     reactSelectMinOptionsMin: 0,
     reactSelectMinOptionsMax: 99,
+    richPasteKey: 'tm-salic-setting-rich-paste',
     collapsibleStatePrefix: 'tm-salic-collapsible-state',
     tabStatePrefix: 'tm-salic-tab-state',
     filterStatePrefix: 'tm-salic-filter-state',
@@ -224,6 +225,10 @@
 
   function isReactSelectOriginalVisible() {
     return getSetting(CONFIG.reactSelectShowOriginalKey, false);
+  }
+
+  function isRichPasteEnabled() {
+    return getSetting(CONFIG.richPasteKey, false);
   }
 
   function getReactSelectMinOptions() {
@@ -926,6 +931,48 @@
         .replace(/\n[ \t]+/g, '\n')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
+    }
+  }
+
+  function plainTextToHtml(text) {
+    const normalized = String(text || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n');
+    const escaped = escapeHtml(normalized);
+    const paragraphs = escaped.split(/\n{2,}/g).map((block) => block.replace(/\n/g, '<br>'));
+    return paragraphs.map((block) => `<p>${block}</p>`).join('');
+  }
+
+  function insertHtmlIntoDocument(doc, html) {
+    if (!doc || !doc.body) return false;
+    if (!html) return false;
+    try {
+      if (typeof doc.execCommand === 'function') {
+        const ok = doc.execCommand('insertHTML', false, html);
+        if (ok) return true;
+      }
+    } catch (_) {}
+    try {
+      const selection = doc.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        doc.body.insertAdjacentHTML('beforeend', html);
+        return true;
+      }
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      const template = doc.createElement('template');
+      template.innerHTML = html;
+      const fragment = doc.createDocumentFragment();
+      while (template.content.firstChild) {
+        fragment.appendChild(template.content.firstChild);
+      }
+      range.insertNode(fragment);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -1773,6 +1820,10 @@
       setSetting(CONFIG.reactSelectShowOriginalKey, checked);
     });
 
+    const richPasteToggle = createSettingToggle('Colar formatado', 'Permite colar mantendo a formatacao do texto.', isRichPasteEnabled(), (checked) => {
+      setSetting(CONFIG.richPasteKey, checked);
+    });
+
     const reactSelectMinOptions = createNumberStepper(
       'Minimo de opcoes',
       'So usa busca quando houver opcoes suficientes.',
@@ -1824,6 +1875,7 @@
     menu.appendChild(uiMemoryToggle);
     menu.appendChild(reactSelectToggle);
     menu.appendChild(reactSelectOriginalToggle);
+    menu.appendChild(richPasteToggle);
     menu.appendChild(reactSelectMinOptions);
     menu.appendChild(actionsWrap);
     root.appendChild(button);
@@ -1997,9 +2049,27 @@
           updateHiddenTextarea(field, value);
           scheduleSave(field, key);
         };
+        const onEditorPaste = (event) => {
+          if (!isRichPasteEnabled()) return;
+          if (!event.clipboardData) return;
+          const html = event.clipboardData.getData('text/html');
+          const plain = event.clipboardData.getData('text/plain');
+          const payload = html || (plain ? plainTextToHtml(plain) : '');
+          if (!payload) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const ok = insertHtmlIntoDocument(doc, payload);
+          if (!ok) return;
+          const value = getFieldValue(field);
+          const comparable = normalizeValue(value);
+          STATE.userEdited.set(field, true);
+          STATE.lastValue.set(field, comparable);
+          updateHiddenTextarea(field, value);
+          scheduleSave(field, key);
+        };
         doc.addEventListener('input', onEditorInput);
         doc.addEventListener('keyup', onEditorInput);
-        doc.addEventListener('paste', onEditorInput);
+        doc.addEventListener('paste', onEditorPaste, true);
         doc.addEventListener('cut', onEditorInput);
         doc.addEventListener('focusin', onEditorFocus);
         return true;
