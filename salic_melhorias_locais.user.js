@@ -976,6 +976,22 @@
     }
   }
 
+  function insertHtmlIntoEditor(field, doc, html) {
+    if (!html) return false;
+    const tinymceGlobal = window.tinymce || window.tinyMCE;
+    if (tinymceGlobal && field && field.id) {
+      try {
+        const editor = tinymceGlobal.get(field.id);
+        if (editor && typeof editor.insertContent === 'function') {
+          if (typeof editor.focus === 'function') editor.focus();
+          editor.insertContent(html);
+          return true;
+        }
+      } catch (_) {}
+    }
+    return insertHtmlIntoDocument(doc, html);
+  }
+
   function getStoredTextEntries() {
     const projectId = getProjectId();
     const prefix = `tm-salic-localmem::${projectId}::`;
@@ -2056,7 +2072,7 @@
           const plain = event.clipboardData.getData('text/plain');
           const payload = html || (plain ? plainTextToHtml(plain) : '');
           if (!payload) return;
-          const ok = insertHtmlIntoDocument(doc, payload);
+          const ok = insertHtmlIntoEditor(field, doc, payload);
           if (!ok) return;
           event.preventDefault();
           event.stopPropagation();
