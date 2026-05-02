@@ -3,7 +3,7 @@
 // @namespace    power-salic
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
-// @version      3.14
+// @version      3.15
 // @description  Salvamento local automatico de campos de texto e ocultacao do botao excluir proposta.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -682,30 +682,69 @@
     }
     .tm-salic-alt-editor .ql-editor {
       min-height: 260px;
+      font: 400 16px/1.5 Arial, sans-serif;
+      color: #111827;
+      background: #fff;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .tm-salic-alt-editor .ql-editor p,
+    .tm-salic-alt-editor .ql-editor ol,
+    .tm-salic-alt-editor .ql-editor ul {
+      margin: 0 0 .5em;
+    }
+    .tm-salic-alt-editor .ql-editor .ql-size-small {
+      font-size: .75em;
+    }
+    .tm-salic-alt-editor .ql-editor .ql-size-large {
+      font-size: 1.5em;
+    }
+    .tm-salic-alt-editor .ql-editor .ql-size-huge {
+      font-size: 2.5em;
+    }
+    .tm-salic-alt-editor .ql-toolbar select,
+    .tm-salic-alt-editor .ql-toolbar .ql-picker {
+      max-width: none;
+    }
+    .tm-salic-alt-editor .ql-toolbar .ql-size {
+      width: 5.5rem;
     }
     .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="12px"]::before,
     .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="12px"]::before {
       content: "12px";
+      font-size: 12px;
     }
     .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="14px"]::before,
     .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="14px"]::before {
       content: "14px";
+      font-size: 14px;
     }
     .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="16px"]::before,
     .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="16px"]::before {
       content: "16px";
+      font-size: 16px;
     }
     .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="18px"]::before,
     .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="18px"]::before {
       content: "18px";
+      font-size: 18px;
     }
     .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="24px"]::before,
     .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="24px"]::before {
       content: "24px";
+      font-size: 24px;
     }
     .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="32px"]::before,
     .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="32px"]::before {
       content: "32px";
+      font-size: 32px;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-label::before {
+      line-height: 1;
+      vertical-align: middle;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-options {
+      min-width: 6rem;
     }
     .tm-salic-paste-backdrop {
       position: fixed;
@@ -1326,7 +1365,7 @@
     if (!window.Quill) return;
     try {
       const SizeStyle = window.Quill.import('attributors/style/size');
-      SizeStyle.whitelist = ['12px', '14px', '16px', '18px', '24px', '32px'];
+      SizeStyle.whitelist = ['10px', '12px', '14px', '16px', '18px', '24px', '32px', '8pt', '10pt', '12pt', '14pt', '18pt', '24pt', '36pt'];
       window.Quill.register(SizeStyle, true);
     } catch (_) {}
   }
@@ -1347,9 +1386,11 @@
     const wrapper = document.createElement('div');
     wrapper.className = 'tm-salic-alt-editor';
     wrapper.dataset.tmAltEditor = '1';
+    wrapper.dataset.tmReactselect = 'off';
 
     const editorHost = document.createElement('div');
     editorHost.className = 'tm-salic-alt-body';
+    editorHost.dataset.tmReactselect = 'off';
     wrapper.appendChild(editorHost);
 
     const key = getFieldKey(field);
@@ -1366,6 +1407,15 @@
         ]
       }
     });
+    const toolbar = wrapper.querySelector('.ql-toolbar');
+    if (toolbar) {
+      toolbar.dataset.tmReactselect = 'off';
+      toolbar.classList.add('tm-reactselect-ignore');
+      toolbar.querySelectorAll('select').forEach((select) => {
+        select.dataset.tmReactselect = 'off';
+        select.classList.add('tm-reactselect-ignore');
+      });
+    }
     const initialHtml = getFieldValue(field);
     if (initialHtml) {
       quill.clipboard.dangerouslyPasteHTML(initialHtml, 'silent');

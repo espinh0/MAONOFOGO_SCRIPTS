@@ -3,7 +3,7 @@
 // @namespace    universal-react-select
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
-// @version      2.8
+// @version      2.9
 // @description  Converts plain HTML select dropdowns into React Select components with sync.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -29,7 +29,7 @@
     reactSelectStyleUrls: [],
     placeholderText: 'Select...',
     hideOriginalSelect: false,
-    ignoreSelector: '.tm-reactselect-ignore, [data-tm-reactselect="off"]',
+    ignoreSelector: '.tm-reactselect-ignore, [data-tm-reactselect="off"], .tm-salic-alt-editor, .ql-toolbar, .ql-picker, .ql-container',
     scanIntervalMs: 500,
     maxMenuZIndex: 999999,
     minControlWidth: 240,
