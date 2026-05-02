@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Power Salic Suite
 // @namespace    power-salic
-// @version      1.1.0
+// @version      1.1.1
 // @description  Loader dinamico do Power SALIC e ReactSelect com opcao de atualizar sem reinstalar.
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js
@@ -15,6 +15,10 @@
 // @grant        GM_deleteValue
 // @grant        GM_xmlhttpRequest
 // @connect      raw.githubusercontent.com
+// @connect      cdnjs.cloudflare.com
+// @connect      cdn.jsdelivr.net
+// @connect      esm.sh
+// @connect      unpkg.com
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -63,10 +67,9 @@
   }
 
   function runScript(source, url) {
-    const script = document.createElement('script');
-    script.textContent = `${source}\n//# sourceURL=${url}`;
-    (document.head || document.documentElement).appendChild(script);
-    script.remove();
+    // Keep fetched userscripts in the Tampermonkey sandbox. Injecting a
+    // <script> into the page loses GM_* grants and can be blocked by CSP.
+    eval(`${source}\n//# sourceURL=${url}`);
   }
 
   async function loadScripts() {
@@ -74,7 +77,14 @@
     for (const baseUrl of CONFIG.scriptUrls) {
       const url = forceToken ? `${baseUrl}?v=${encodeURIComponent(forceToken)}` : baseUrl;
       const source = await fetchText(url);
-      runScript(source, url);
+      try {
+        runScript(source, url);
+      } catch (err) {
+        try {
+          console.error('[Power Salic Suite] Script error:', url, err);
+        } catch (_) {}
+        throw err;
+      }
     }
   }
 
