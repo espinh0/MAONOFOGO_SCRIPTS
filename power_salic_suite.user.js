@@ -2,7 +2,7 @@
 // @name         Power Salic Suite
 // @namespace    power-salic
 // @version      1.1.1
-// @description  Loader dinamico do Power SALIC e ReactSelect com opcao de atualizar sem reinstalar.
+// @description  Loader dinamico do Power SALIC e ReactSelect com modo developer via localhost.
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js
 // @match        https://aplicacoes.cultura.gov.br/*
@@ -19,30 +19,65 @@
 // @connect      cdn.jsdelivr.net
 // @connect      esm.sh
 // @connect      unpkg.com
+// @connect      localhost
+// @connect      127.0.0.1
 // @run-at       document-idle
 // ==/UserScript==
 
 (function () {
   'use strict';
+
   if (window.__tmPowerSalicSuiteLoaderRunning) return;
   window.__tmPowerSalicSuiteLoaderRunning = true;
 
   const CONFIG = {
     forceParam: 'tm_ps_update',
-    scriptUrls: [
+    devParam: 'tm_ps_dev',
+
+    productionScriptUrls: [
       'https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js',
       'https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js'
+    ],
+
+    // VS Code Live Server geralmente usa http://127.0.0.1:5500
+    // Ajuste a pasta se seus arquivos estiverem dentro de subdiretório.
+    developerScriptUrls: [
+      'http://127.0.0.1:5500/salic_melhorias_locais.user.js',
+      'http://127.0.0.1:5500/reactselect_universal.user.js'
     ]
   };
 
-  function getForceToken() {
+  function getQueryParam(name) {
     try {
-      const params = new URLSearchParams(window.location.search);
-      const token = params.get(CONFIG.forceParam);
-      return token ? String(token) : '';
+      return new URLSearchParams(window.location.search).get(name) || '';
     } catch (_) {
       return '';
     }
+  }
+
+  function isDeveloperMode() {
+    const value = getQueryParam(CONFIG.devParam).toLowerCase();
+
+    return (
+      value === '1' ||
+      value === 'true' ||
+      value === 'yes' ||
+      value === 'on'
+    );
+  }
+
+  function getForceToken() {
+    const token = getQueryParam(CONFIG.forceParam);
+    return token ? String(token) : '';
+  }
+
+  function buildUrl(baseUrl, forceToken, devMode) {
+    const cacheToken = forceToken || (devMode ? Date.now() : '');
+
+    if (!cacheToken) return baseUrl;
+
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    return `${baseUrl}${separator}v=${encodeURIComponent(cacheToken)}`;
   }
 
   function fetchText(url) {
@@ -51,6 +86,7 @@
         reject(new Error('GM_xmlhttpRequest not available'));
         return;
       }
+
       GM_xmlhttpRequest({
         method: 'GET',
         url,
@@ -67,30 +103,35 @@
   }
 
   function runScript(source, url) {
-    // Keep fetched userscripts in the Tampermonkey sandbox. Injecting a
-    // <script> into the page loses GM_* grants and can be blocked by CSP.
     eval(`${source}\n//# sourceURL=${url}`);
   }
 
   async function loadScripts() {
+    const devMode = isDeveloperMode();
     const forceToken = getForceToken();
-    for (const baseUrl of CONFIG.scriptUrls) {
-      const url = forceToken ? `${baseUrl}?v=${encodeURIComponent(forceToken)}` : baseUrl;
+
+    const scriptUrls = devMode
+      ? CONFIG.developerScriptUrls
+      : CONFIG.productionScriptUrls;
+
+    console.info(
+      `[Power Salic Suite] Loading in ${devMode ? 'DEVELOPER' : 'PRODUCTION'} mode`
+    );
+
+    for (const baseUrl of scriptUrls) {
+      const url = buildUrl(baseUrl, forceToken, devMode);
       const source = await fetchText(url);
+
       try {
         runScript(source, url);
       } catch (err) {
-        try {
-          console.error('[Power Salic Suite] Script error:', url, err);
-        } catch (_) {}
+        console.error('[Power Salic Suite] Script error:', url, err);
         throw err;
       }
     }
   }
 
   loadScripts().catch((err) => {
-    try {
-      console.error('[Power Salic Suite] Loader error:', err);
-    } catch (_) {}
+    console.error('[Power Salic Suite] Loader error:', err);
   });
 })();
