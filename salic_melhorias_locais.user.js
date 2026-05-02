@@ -3,7 +3,7 @@
 // @namespace    power-salic
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
-// @version      3.11
+// @version      3.15
 // @description  Salvamento local automatico de campos de texto e ocultacao do botao excluir proposta.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -667,6 +667,9 @@
       background: #fff;
       box-shadow: 0 6px 18px rgba(15, 23, 42, .08);
     }
+    .tm-salic-legacy-editor-hidden {
+      display: none !important;
+    }
     .tm-salic-alt-editor .ql-toolbar.ql-snow {
       border: 0;
       border-bottom: 1px solid #e2e8f0;
@@ -679,6 +682,69 @@
     }
     .tm-salic-alt-editor .ql-editor {
       min-height: 260px;
+      font: 400 16px/1.5 Arial, sans-serif;
+      color: #111827;
+      background: #fff;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .tm-salic-alt-editor .ql-editor p,
+    .tm-salic-alt-editor .ql-editor ol,
+    .tm-salic-alt-editor .ql-editor ul {
+      margin: 0 0 .5em;
+    }
+    .tm-salic-alt-editor .ql-editor .ql-size-small {
+      font-size: .75em;
+    }
+    .tm-salic-alt-editor .ql-editor .ql-size-large {
+      font-size: 1.5em;
+    }
+    .tm-salic-alt-editor .ql-editor .ql-size-huge {
+      font-size: 2.5em;
+    }
+    .tm-salic-alt-editor .ql-toolbar select,
+    .tm-salic-alt-editor .ql-toolbar .ql-picker {
+      max-width: none;
+    }
+    .tm-salic-alt-editor .ql-toolbar .ql-size {
+      width: 5.5rem;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="12px"]::before,
+    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="12px"]::before {
+      content: "12px";
+      font-size: 12px;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="14px"]::before,
+    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="14px"]::before {
+      content: "14px";
+      font-size: 14px;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="16px"]::before,
+    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="16px"]::before {
+      content: "16px";
+      font-size: 16px;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="18px"]::before,
+    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="18px"]::before {
+      content: "18px";
+      font-size: 18px;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="24px"]::before,
+    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="24px"]::before {
+      content: "24px";
+      font-size: 24px;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="32px"]::before,
+    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="32px"]::before {
+      content: "32px";
+      font-size: 32px;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-label::before {
+      line-height: 1;
+      vertical-align: middle;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-options {
+      min-width: 6rem;
     }
     .tm-salic-paste-backdrop {
       position: fixed;
@@ -830,8 +896,76 @@
     return document.getElementById(`${field.id}_ifr`);
   }
 
+  function getTinyMceEditor(field) {
+    const tinymceGlobal = window.tinymce || window.tinyMCE;
+    if (!tinymceGlobal || !field || !field.id) return null;
+    try {
+      return tinymceGlobal.get(field.id) || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function getLegacyEditorToolbarRoot(iframe) {
+    if (!iframe) return null;
+    let node = iframe.parentElement;
+    while (node && node !== document.body && node !== document.documentElement) {
+      const hasToolbar = Boolean(node.querySelector(
+        '.mce-toolbar, .mce-toolbar-grp, .mce-menubar, .tox-toolbar, .tox-toolbar__primary, .tox-editor-header, [role="toolbar"]'
+      ));
+      if (hasToolbar && node.contains(iframe)) return node;
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function getEditorRoot(field) {
+    if (!field || field.tagName.toLowerCase() !== 'textarea') return null;
+    const iframe = getEditorIframe(field);
+    if (field.id) {
+      const knownRoot = document.getElementById(`${field.id}_tbl`)
+        || document.getElementById(`${field.id}_parent`)
+        || document.getElementById(`${field.id}_container`);
+      if (knownRoot) return knownRoot;
+    }
+    const toolbarRoot = getLegacyEditorToolbarRoot(iframe);
+    if (toolbarRoot) return toolbarRoot;
+    const editor = getTinyMceEditor(field);
+    if (editor && typeof editor.getContainer === 'function') {
+      try {
+        const container = editor.getContainer();
+        if (container) return container;
+      } catch (_) {}
+    }
+    if (!iframe) return null;
+    return iframe.closest('.tox-tinymce')
+      || iframe.closest('.mce-tinymce')
+      || iframe.closest('.mceEditor')
+      || iframe.closest('table.mceLayout')
+      || iframe.closest('.mce-container')
+      || iframe.closest('.mce-panel')
+      || iframe.parentElement;
+  }
+
   function getAltEditorEntry(field) {
     return STATE.altEditors.get(field) || null;
+  }
+
+  function setLegacyEditorContent(field, value) {
+    const nextValue = value === null || value === undefined ? '' : String(value);
+    const editor = getTinyMceEditor(field);
+    if (editor && typeof editor.setContent === 'function') {
+      try {
+        editor.setContent(nextValue);
+      } catch (_) {}
+    }
+    const iframe = getEditorIframe(field);
+    if (iframe && iframe.contentDocument && iframe.contentDocument.body) {
+      try {
+        iframe.contentDocument.body.innerHTML = nextValue;
+      } catch (_) {}
+    }
+    updateHiddenTextarea(field, nextValue);
   }
 
   function updateHiddenTextarea(field, value) {
@@ -872,6 +1006,7 @@
     if (altEntry && altEntry.body) {
       altEntry.body.innerHTML = nextValue;
       updateHiddenTextarea(field, nextValue);
+      setLegacyEditorContent(field, nextValue);
       return;
     }
     const iframe = getEditorIframe(field);
@@ -904,12 +1039,8 @@
   function getStatusAnchor(field) {
     const altEntry = getAltEditorEntry(field);
     if (altEntry && altEntry.wrapper) return altEntry.wrapper;
-    const iframe = getEditorIframe(field);
-    if (iframe) {
-      const editorRoot = iframe.closest('.tox-tinymce, .mce-tinymce, .mce-container, .mce-panel');
-      if (editorRoot) return editorRoot;
-      if (iframe.parentElement) return iframe.parentElement;
-    }
+    const editorRoot = getEditorRoot(field);
+    if (editorRoot) return editorRoot;
     return field;
   }
 
@@ -1116,6 +1247,91 @@
     return insertHtmlIntoDocument(doc, html);
   }
 
+  function isMeaningfulNode(node) {
+    if (!node) return false;
+    if (node.nodeType === Node.TEXT_NODE) return normalizeText(node.nodeValue).length > 0;
+    if (node.nodeType !== Node.ELEMENT_NODE) return false;
+    if (node.tagName === 'BR') return false;
+    if (normalizeText(node.textContent).length > 0) return true;
+    return Boolean(node.querySelector('img, table, iframe, object, video, audio, input, textarea, select, button, hr'));
+  }
+
+  function getFirstMeaningfulChild(root) {
+    if (!root) return null;
+    return Array.from(root.childNodes).find((node) => isMeaningfulNode(node)) || null;
+  }
+
+  function isSelectionAtEditorStart(doc) {
+    if (!doc || !doc.body) return false;
+    const selection = doc.getSelection();
+    if (!selection || selection.rangeCount === 0) return false;
+    const range = selection.getRangeAt(0);
+    if (!range.collapsed) return false;
+    if (!doc.body.contains(range.startContainer)) return false;
+    try {
+      const before = range.cloneRange();
+      before.selectNodeContents(doc.body);
+      before.setEnd(range.startContainer, range.startOffset);
+      if (normalizeText(before.toString()).length > 0) return false;
+      const fragment = before.cloneContents();
+      return !Array.from(fragment.childNodes).some((node) => isMeaningfulNode(node));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function createLeadingBlankBlock(doc) {
+    const first = getFirstMeaningfulChild(doc.body);
+    let block = null;
+    if (first && first.nodeType === Node.ELEMENT_NODE && /^(P|DIV)$/i.test(first.tagName)) {
+      block = first.cloneNode(false);
+      block.removeAttribute('id');
+      block.removeAttribute('name');
+    } else {
+      block = doc.createElement('p');
+    }
+    block.innerHTML = '<br data-mce-bogus="1">';
+    doc.body.insertBefore(block, first || doc.body.firstChild);
+    return block;
+  }
+
+  function setCaretInsideNode(doc, node) {
+    try {
+      const selection = doc.getSelection();
+      const range = doc.createRange();
+      range.setStart(node, 0);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } catch (_) {}
+  }
+
+  function patchLeadingEnter(field, doc, event) {
+    if (!event || event.key !== 'Enter') return false;
+    if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.isComposing) return false;
+    if (!isSelectionAtEditorStart(doc)) return false;
+
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+
+    const applyPatch = () => {
+      const block = createLeadingBlankBlock(doc);
+      setCaretInsideNode(doc, block);
+    };
+    const editor = getTinyMceEditor(field);
+    if (editor && editor.undoManager && typeof editor.undoManager.transact === 'function') {
+      try {
+        editor.undoManager.transact(applyPatch);
+      } catch (_) {
+        applyPatch();
+      }
+    } else {
+      applyPatch();
+    }
+    return true;
+  }
+
   function loadQuill() {
     if (window.Quill) return Promise.resolve(window.Quill);
     if (STATE.quillPromise) return STATE.quillPromise;
@@ -1145,12 +1361,19 @@
     return STATE.quillPromise;
   }
 
+  function registerQuillFormats() {
+    if (!window.Quill) return;
+    try {
+      const SizeStyle = window.Quill.import('attributors/style/size');
+      SizeStyle.whitelist = ['10px', '12px', '14px', '16px', '18px', '24px', '32px', '8pt', '10pt', '12pt', '14pt', '18pt', '24pt', '36pt'];
+      window.Quill.register(SizeStyle, true);
+    } catch (_) {}
+  }
+
   function createAltEditor(field) {
     if (!field || getAltEditorEntry(field)) return;
     if (!isAltEditorEnabled()) return;
-    const iframe = getEditorIframe(field);
-    if (!iframe) return;
-    const root = iframe.closest('.tox-tinymce, .mce-tinymce, .mce-container, .mce-panel') || iframe.parentElement;
+    const root = getEditorRoot(field);
     if (!root) return;
 
     if (!window.Quill) {
@@ -1158,12 +1381,16 @@
       return;
     }
 
+    registerQuillFormats();
+
     const wrapper = document.createElement('div');
     wrapper.className = 'tm-salic-alt-editor';
     wrapper.dataset.tmAltEditor = '1';
+    wrapper.dataset.tmReactselect = 'off';
 
     const editorHost = document.createElement('div');
     editorHost.className = 'tm-salic-alt-body';
+    editorHost.dataset.tmReactselect = 'off';
     wrapper.appendChild(editorHost);
 
     const key = getFieldKey(field);
@@ -1172,12 +1399,23 @@
       modules: {
         toolbar: [
           ['bold', 'italic', 'underline'],
+          [{ color: [] }, { background: [] }],
+          [{ size: ['12px', '14px', '16px', '18px', '24px', '32px'] }],
           [{ list: 'ordered' }, { list: 'bullet' }],
           ['link'],
           ['clean']
         ]
       }
     });
+    const toolbar = wrapper.querySelector('.ql-toolbar');
+    if (toolbar) {
+      toolbar.dataset.tmReactselect = 'off';
+      toolbar.classList.add('tm-reactselect-ignore');
+      toolbar.querySelectorAll('select').forEach((select) => {
+        select.dataset.tmReactselect = 'off';
+        select.classList.add('tm-reactselect-ignore');
+      });
+    }
     const initialHtml = getFieldValue(field);
     if (initialHtml) {
       quill.clipboard.dangerouslyPasteHTML(initialHtml, 'silent');
@@ -1201,16 +1439,30 @@
     quill.on('text-change', onAltInput);
     editorHost.addEventListener('focusin', onAltFocus);
 
-    root.style.display = 'none';
+    const previousDisplay = root.style.display || '';
+    const previousAriaHidden = root.getAttribute('aria-hidden');
+    root.classList.add('tm-salic-legacy-editor-hidden');
+    root.style.setProperty('display', 'none', 'important');
+    root.setAttribute('aria-hidden', 'true');
     root.insertAdjacentElement('afterend', wrapper);
 
-    STATE.altEditors.set(field, { wrapper, body: quill.root, root, quill });
+    STATE.altEditors.set(field, { wrapper, body: quill.root, root, quill, previousDisplay, previousAriaHidden });
   }
 
   function removeAltEditor(field) {
     const entry = getAltEditorEntry(field);
     if (!entry) return;
-    if (entry.root) entry.root.style.display = '';
+    const value = entry.body ? entry.body.innerHTML || '' : getFieldValue(field);
+    setLegacyEditorContent(field, value);
+    if (entry.root) {
+      entry.root.classList.remove('tm-salic-legacy-editor-hidden');
+      entry.root.style.display = entry.previousDisplay || '';
+      if (entry.previousAriaHidden === null || entry.previousAriaHidden === undefined) {
+        entry.root.removeAttribute('aria-hidden');
+      } else {
+        entry.root.setAttribute('aria-hidden', entry.previousAriaHidden);
+      }
+    }
     if (entry.wrapper) entry.wrapper.remove();
     STATE.altEditors.delete(field);
   }
@@ -2456,6 +2708,16 @@
           updateHiddenTextarea(field, value);
           scheduleSave(field, key);
         };
+        const onEditorKeydown = (event) => {
+          if (!patchLeadingEnter(field, doc, event)) return;
+          const value = getFieldValue(field);
+          const comparable = normalizeValue(value);
+          STATE.userEdited.set(field, true);
+          STATE.lastValue.set(field, comparable);
+          updateHiddenTextarea(field, value);
+          scheduleSave(field, key);
+        };
+        doc.addEventListener('keydown', onEditorKeydown, true);
         doc.addEventListener('input', onEditorInput);
         doc.addEventListener('keyup', onEditorInput);
         doc.addEventListener('paste', onEditorPaste, true);
