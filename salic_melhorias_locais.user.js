@@ -77,6 +77,7 @@
     settingsListenersReady: false,
     altEditors: new WeakMap(),
     pasteModal: null,
+    quillPromise: null,
     settings: Object.create(null)
   };
 
@@ -666,39 +667,18 @@
       background: #fff;
       box-shadow: 0 6px 18px rgba(15, 23, 42, .08);
     }
-    .tm-salic-alt-toolbar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: .35rem;
-      padding: .45rem;
+    .tm-salic-alt-editor .ql-toolbar.ql-snow {
+      border: 0;
       border-bottom: 1px solid #e2e8f0;
       background: #f8fafc;
     }
-    .tm-salic-alt-toolbar button {
-      border: 1px solid #cbd5e1;
-      border-radius: .4rem;
-      background: #fff;
-      color: #0f172a;
-      font: 600 .75rem/1 Arial, sans-serif;
-      padding: .3rem .5rem;
-      cursor: pointer;
-    }
-    .tm-salic-alt-toolbar button:hover,
-    .tm-salic-alt-toolbar button:focus {
-      border-color: #94a3b8;
-      background: #f1f5f9;
-      outline: none;
-    }
-    .tm-salic-alt-body {
-      min-height: 260px;
-      padding: .75rem;
+    .tm-salic-alt-editor .ql-container.ql-snow {
+      border: 0;
       font: 400 .9rem/1.5 Arial, sans-serif;
       color: #111827;
-      outline: none;
-      word-break: break-word;
     }
-    .tm-salic-alt-body p {
-      margin: 0 0 .85rem;
+    .tm-salic-alt-editor .ql-editor {
+      min-height: 260px;
     }
     .tm-salic-paste-backdrop {
       position: fixed;
@@ -960,7 +940,25 @@
       status.appendChild(btn);
       anchor.insertAdjacentElement('afterend', status);
     }
+    updatePasteButtonVisibility(field);
     return status;
+  }
+
+  function updatePasteButtonVisibility(field) {
+    const status = getStatusAnchor(field).nextElementSibling;
+    if (!status || !status.classList.contains(CONFIG.statusClass)) return;
+    const pasteBtn = status.querySelector('[data-tm-localmem-paste="1"]');
+    if (!pasteBtn) return;
+    pasteBtn.style.display = isRichPasteEnabled() ? 'inline-flex' : 'none';
+  }
+
+  function updateAllPasteButtonsVisibility() {
+    const statuses = Array.from(document.querySelectorAll(`.${CONFIG.statusClass}`));
+    statuses.forEach((status) => {
+      const pasteBtn = status.querySelector('[data-tm-localmem-paste="1"]');
+      if (!pasteBtn) return;
+      pasteBtn.style.display = isRichPasteEnabled() ? 'inline-flex' : 'none';
+    });
   }
 
   function setStatus(field, text) {
@@ -971,6 +969,7 @@
     if (textNode) {
       textNode.textContent = text;
     }
+    updatePasteButtonVisibility(field);
   }
 
   function updateRestoreButton(field, key) {
@@ -981,6 +980,7 @@
     if (!restoreBtn) return;
     const stored = storageGet(key);
     restoreBtn.style.display = stored === null || stored === undefined || isValueEmpty(stored) ? 'none' : 'inline-flex';
+    updatePasteButtonVisibility(field);
   }
 
   function clearProjectCache() {
@@ -1091,6 +1091,17 @@
 
   function insertHtmlIntoEditor(field, doc, html) {
     if (!html) return false;
+    const altEntry = getAltEditorEntry(field);
+    if (altEntry && altEntry.quill) {
+      try {
+        const quill = altEntry.quill;
+        const range = quill.getSelection(true);
+        const index = range ? range.index : quill.getLength();
+        quill.clipboard.dangerouslyPasteHTML(index, html, 'user');
+        quill.setSelection(index + 1, 0, 'silent');
+        return true;
+      } catch (_) {}
+    }
     const tinymceGlobal = window.tinymce || window.tinyMCE;
     if (tinymceGlobal && field && field.id) {
       try {
@@ -1103,6 +1114,35 @@
       } catch (_) {}
     }
     return insertHtmlIntoDocument(doc, html);
+  }
+
+  function loadQuill() {
+    if (window.Quill) return Promise.resolve(window.Quill);
+    if (STATE.quillPromise) return STATE.quillPromise;
+    STATE.quillPromise = new Promise((resolve, reject) => {
+      const cssId = 'tm-salic-quill-css';
+      const jsId = 'tm-salic-quill-js';
+      if (!document.getElementById(cssId)) {
+        const link = document.createElement('link');
+        link.id = cssId;
+        link.rel = 'stylesheet';
+        link.href = 'https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css';
+        document.head.appendChild(link);
+      }
+      const existingScript = document.getElementById(jsId);
+      if (existingScript) {
+        if (window.Quill) resolve(window.Quill);
+        else existingScript.addEventListener('load', () => resolve(window.Quill));
+        return;
+      }
+      const script = document.createElement('script');
+      script.id = jsId;
+      script.src = 'https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js';
+      script.onload = () => resolve(window.Quill);
+      script.onerror = () => reject(new Error('Failed to load Quill'));
+      document.head.appendChild(script);
+    });
+    return STATE.quillPromise;
   }
 
   function createAltEditor(field) {
@@ -1122,72 +1162,59 @@
     toolbar.innerHTML = [
       '<button type="button" data-cmd="bold">Negrito</button>',
       '<button type="button" data-cmd="italic">Italico</button>',
+
+      if (!window.Quill) {
+        loadQuill().then(() => createAltEditor(field)).catch(() => {});
+        return;
+      }
       '<button type="button" data-cmd="underline">Sublinhado</button>',
       '<button type="button" data-cmd="insertUnorderedList">Lista</button>',
       '<button type="button" data-cmd="insertOrderedList">Lista numerada</button>',
       '<button type="button" data-cmd="removeFormat">Limpar</button>',
-      '<button type="button" data-cmd="createLink">Link</button>'
-    ].join('');
 
-    const body = document.createElement('div');
-    body.className = 'tm-salic-alt-body';
-    body.contentEditable = 'true';
-    body.spellcheck = true;
-    body.innerHTML = getFieldValue(field);
-
-    toolbar.addEventListener('click', (event) => {
-      const button = event.target.closest('button[data-cmd]');
-      if (!button) return;
-      event.preventDefault();
-      body.focus();
-      const cmd = button.getAttribute('data-cmd');
-      if (cmd === 'createLink') {
-        const url = window.prompt('URL do link:');
-        if (url) document.execCommand('createLink', false, url);
-        return;
-      }
-      document.execCommand(cmd, false, null);
-    });
-
-    const key = getFieldKey(field);
-    const onAltInput = () => {
-      const value = body.innerHTML || '';
-      const comparable = normalizeValue(value);
-      if (STATE.lastValue.get(field) === comparable) return;
-      STATE.userEdited.set(field, true);
-      STATE.lastValue.set(field, comparable);
-      updateHiddenTextarea(field, value);
-      scheduleSave(field, key);
+      const editorHost = document.createElement('div');
+      editorHost.className = 'tm-salic-alt-body';
+      wrapper.appendChild(editorHost);
     };
     const onAltFocus = () => {
-      const value = body.innerHTML || '';
-      STATE.lastValue.set(field, normalizeValue(value));
-      STATE.userEdited.set(field, false);
-    };
+      const quill = new window.Quill(editorHost, {
+        theme: 'snow',
+        modules: {
+          toolbar: [
+            ['bold', 'italic', 'underline'],
+            [{ list: 'ordered' }, { list: 'bullet' }],
+            ['link'],
+            ['clean']
+          ]
+        }
+      });
+      const initialHtml = getFieldValue(field);
+      if (initialHtml) {
+        quill.clipboard.dangerouslyPasteHTML(initialHtml, 'silent');
+      }
 
-    body.addEventListener('input', onAltInput);
-    body.addEventListener('keyup', onAltInput);
-    body.addEventListener('paste', onAltInput);
-    body.addEventListener('cut', onAltInput);
-    body.addEventListener('focusin', onAltFocus);
+      const onAltInput = () => {
+        const value = quill.root.innerHTML || '';
+        const comparable = normalizeValue(value);
+        if (STATE.lastValue.get(field) === comparable) return;
+        STATE.userEdited.set(field, true);
+        STATE.lastValue.set(field, comparable);
+        updateHiddenTextarea(field, value);
+        scheduleSave(field, key);
+      };
+      const onAltFocus = () => {
+        const value = quill.root.innerHTML || '';
+        STATE.lastValue.set(field, normalizeValue(value));
+        STATE.userEdited.set(field, false);
+      };
 
-    wrapper.appendChild(toolbar);
-    wrapper.appendChild(body);
-    root.style.display = 'none';
-    root.insertAdjacentElement('afterend', wrapper);
-
-    STATE.altEditors.set(field, { wrapper, body, root });
-  }
-
-  function removeAltEditor(field) {
-    const entry = getAltEditorEntry(field);
-    if (!entry) return;
-    if (entry.root) entry.root.style.display = '';
+      quill.on('text-change', onAltInput);
+      editorHost.addEventListener('focusin', onAltFocus);
     if (entry.wrapper) entry.wrapper.remove();
     STATE.altEditors.delete(field);
   }
 
-  function applyAltEditors() {
+      STATE.altEditors.set(field, { wrapper, body: quill.root, root, quill });
     const enabled = isAltEditorEnabled();
     const fields = Array.from(document.querySelectorAll('textarea'));
     fields.forEach((field) => {
@@ -2175,6 +2202,7 @@
 
     const richPasteToggle = createSettingToggle('Colar formatado', 'Permite colar mantendo a formatacao do texto.', isRichPasteEnabled(), (checked) => {
       setSetting(CONFIG.richPasteKey, checked);
+      updateAllPasteButtonsVisibility();
     });
 
     const altEditorToggle = createSettingToggle('Editor alternativo', 'Substitui o editor atual por um mais simples e moderno.', isAltEditorEnabled(), (checked) => {
@@ -2473,6 +2501,7 @@
     } else {
       setStatus(field, CONFIG.statusIdle);
     }
+    updatePasteButtonVisibility(field);
   }
 
   function cleanupReactSelectAutosaveUi() {
