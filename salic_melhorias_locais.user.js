@@ -3,7 +3,7 @@
 // @namespace    power-salic
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
-// @version      3.11
+// @version      3.12
 // @description  Salvamento local automatico de campos de texto e ocultacao do botao excluir proposta.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -667,6 +667,9 @@
       background: #fff;
       box-shadow: 0 6px 18px rgba(15, 23, 42, .08);
     }
+    .tm-salic-legacy-editor-hidden {
+      display: none !important;
+    }
     .tm-salic-alt-editor .ql-toolbar.ql-snow {
       border: 0;
       border-bottom: 1px solid #e2e8f0;
@@ -830,8 +833,55 @@
     return document.getElementById(`${field.id}_ifr`);
   }
 
+  function getEditorRoot(field) {
+    if (!field || field.tagName.toLowerCase() !== 'textarea') return null;
+    const iframe = getEditorIframe(field);
+    const tinymceGlobal = window.tinymce || window.tinyMCE;
+    if (tinymceGlobal && field.id) {
+      try {
+        const editor = tinymceGlobal.get(field.id);
+        const container = editor && typeof editor.getContainer === 'function' ? editor.getContainer() : null;
+        if (container) return container;
+      } catch (_) {}
+    }
+    if (field.id) {
+      const knownRoot = document.getElementById(`${field.id}_tbl`)
+        || document.getElementById(`${field.id}_parent`)
+        || document.getElementById(`${field.id}_container`);
+      if (knownRoot) return knownRoot;
+    }
+    if (!iframe) return null;
+    return iframe.closest('.tox-tinymce')
+      || iframe.closest('.mce-tinymce')
+      || iframe.closest('.mceEditor')
+      || iframe.closest('table.mceLayout')
+      || iframe.closest('.mce-container')
+      || iframe.closest('.mce-panel')
+      || iframe.parentElement;
+  }
+
   function getAltEditorEntry(field) {
     return STATE.altEditors.get(field) || null;
+  }
+
+  function setLegacyEditorContent(field, value) {
+    const nextValue = value === null || value === undefined ? '' : String(value);
+    const tinymceGlobal = window.tinymce || window.tinyMCE;
+    if (tinymceGlobal && field && field.id) {
+      try {
+        const editor = tinymceGlobal.get(field.id);
+        if (editor && typeof editor.setContent === 'function') {
+          editor.setContent(nextValue);
+        }
+      } catch (_) {}
+    }
+    const iframe = getEditorIframe(field);
+    if (iframe && iframe.contentDocument && iframe.contentDocument.body) {
+      try {
+        iframe.contentDocument.body.innerHTML = nextValue;
+      } catch (_) {}
+    }
+    updateHiddenTextarea(field, nextValue);
   }
 
   function updateHiddenTextarea(field, value) {
@@ -872,6 +922,7 @@
     if (altEntry && altEntry.body) {
       altEntry.body.innerHTML = nextValue;
       updateHiddenTextarea(field, nextValue);
+      setLegacyEditorContent(field, nextValue);
       return;
     }
     const iframe = getEditorIframe(field);
@@ -904,12 +955,8 @@
   function getStatusAnchor(field) {
     const altEntry = getAltEditorEntry(field);
     if (altEntry && altEntry.wrapper) return altEntry.wrapper;
-    const iframe = getEditorIframe(field);
-    if (iframe) {
-      const editorRoot = iframe.closest('.tox-tinymce, .mce-tinymce, .mce-container, .mce-panel');
-      if (editorRoot) return editorRoot;
-      if (iframe.parentElement) return iframe.parentElement;
-    }
+    const editorRoot = getEditorRoot(field);
+    if (editorRoot) return editorRoot;
     return field;
   }
 
@@ -1148,9 +1195,7 @@
   function createAltEditor(field) {
     if (!field || getAltEditorEntry(field)) return;
     if (!isAltEditorEnabled()) return;
-    const iframe = getEditorIframe(field);
-    if (!iframe) return;
-    const root = iframe.closest('.tox-tinymce, .mce-tinymce, .mce-container, .mce-panel') || iframe.parentElement;
+    const root = getEditorRoot(field);
     if (!root) return;
 
     if (!window.Quill) {
@@ -1201,16 +1246,30 @@
     quill.on('text-change', onAltInput);
     editorHost.addEventListener('focusin', onAltFocus);
 
-    root.style.display = 'none';
+    const previousDisplay = root.style.display || '';
+    const previousAriaHidden = root.getAttribute('aria-hidden');
+    root.classList.add('tm-salic-legacy-editor-hidden');
+    root.style.setProperty('display', 'none', 'important');
+    root.setAttribute('aria-hidden', 'true');
     root.insertAdjacentElement('afterend', wrapper);
 
-    STATE.altEditors.set(field, { wrapper, body: quill.root, root, quill });
+    STATE.altEditors.set(field, { wrapper, body: quill.root, root, quill, previousDisplay, previousAriaHidden });
   }
 
   function removeAltEditor(field) {
     const entry = getAltEditorEntry(field);
     if (!entry) return;
-    if (entry.root) entry.root.style.display = '';
+    const value = entry.body ? entry.body.innerHTML || '' : getFieldValue(field);
+    setLegacyEditorContent(field, value);
+    if (entry.root) {
+      entry.root.classList.remove('tm-salic-legacy-editor-hidden');
+      entry.root.style.display = entry.previousDisplay || '';
+      if (entry.previousAriaHidden === null || entry.previousAriaHidden === undefined) {
+        entry.root.removeAttribute('aria-hidden');
+      } else {
+        entry.root.setAttribute('aria-hidden', entry.previousAriaHidden);
+      }
+    }
     if (entry.wrapper) entry.wrapper.remove();
     STATE.altEditors.delete(field);
   }
