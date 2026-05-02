@@ -1153,68 +1153,69 @@
     const root = iframe.closest('.tox-tinymce, .mce-tinymce, .mce-container, .mce-panel') || iframe.parentElement;
     if (!root) return;
 
+    if (!window.Quill) {
+      loadQuill().then(() => createAltEditor(field)).catch(() => {});
+      return;
+    }
+
     const wrapper = document.createElement('div');
     wrapper.className = 'tm-salic-alt-editor';
     wrapper.dataset.tmAltEditor = '1';
 
-    const toolbar = document.createElement('div');
-    toolbar.className = 'tm-salic-alt-toolbar';
-    toolbar.innerHTML = [
-      '<button type="button" data-cmd="bold">Negrito</button>',
-      '<button type="button" data-cmd="italic">Italico</button>',
+    const editorHost = document.createElement('div');
+    editorHost.className = 'tm-salic-alt-body';
+    wrapper.appendChild(editorHost);
 
-      if (!window.Quill) {
-        loadQuill().then(() => createAltEditor(field)).catch(() => {});
-        return;
+    const key = getFieldKey(field);
+    const quill = new window.Quill(editorHost, {
+      theme: 'snow',
+      modules: {
+        toolbar: [
+          ['bold', 'italic', 'underline'],
+          [{ list: 'ordered' }, { list: 'bullet' }],
+          ['link'],
+          ['clean']
+        ]
       }
-      '<button type="button" data-cmd="underline">Sublinhado</button>',
-      '<button type="button" data-cmd="insertUnorderedList">Lista</button>',
-      '<button type="button" data-cmd="insertOrderedList">Lista numerada</button>',
-      '<button type="button" data-cmd="removeFormat">Limpar</button>',
+    });
+    const initialHtml = getFieldValue(field);
+    if (initialHtml) {
+      quill.clipboard.dangerouslyPasteHTML(initialHtml, 'silent');
+    }
 
-      const editorHost = document.createElement('div');
-      editorHost.className = 'tm-salic-alt-body';
-      wrapper.appendChild(editorHost);
+    const onAltInput = () => {
+      const value = quill.root.innerHTML || '';
+      const comparable = normalizeValue(value);
+      if (STATE.lastValue.get(field) === comparable) return;
+      STATE.userEdited.set(field, true);
+      STATE.lastValue.set(field, comparable);
+      updateHiddenTextarea(field, value);
+      scheduleSave(field, key);
     };
     const onAltFocus = () => {
-      const quill = new window.Quill(editorHost, {
-        theme: 'snow',
-        modules: {
-          toolbar: [
-            ['bold', 'italic', 'underline'],
-            [{ list: 'ordered' }, { list: 'bullet' }],
-            ['link'],
-            ['clean']
-          ]
-        }
-      });
-      const initialHtml = getFieldValue(field);
-      if (initialHtml) {
-        quill.clipboard.dangerouslyPasteHTML(initialHtml, 'silent');
-      }
+      const value = quill.root.innerHTML || '';
+      STATE.lastValue.set(field, normalizeValue(value));
+      STATE.userEdited.set(field, false);
+    };
 
-      const onAltInput = () => {
-        const value = quill.root.innerHTML || '';
-        const comparable = normalizeValue(value);
-        if (STATE.lastValue.get(field) === comparable) return;
-        STATE.userEdited.set(field, true);
-        STATE.lastValue.set(field, comparable);
-        updateHiddenTextarea(field, value);
-        scheduleSave(field, key);
-      };
-      const onAltFocus = () => {
-        const value = quill.root.innerHTML || '';
-        STATE.lastValue.set(field, normalizeValue(value));
-        STATE.userEdited.set(field, false);
-      };
+    quill.on('text-change', onAltInput);
+    editorHost.addEventListener('focusin', onAltFocus);
 
-      quill.on('text-change', onAltInput);
-      editorHost.addEventListener('focusin', onAltFocus);
+    root.style.display = 'none';
+    root.insertAdjacentElement('afterend', wrapper);
+
+    STATE.altEditors.set(field, { wrapper, body: quill.root, root, quill });
+  }
+
+  function removeAltEditor(field) {
+    const entry = getAltEditorEntry(field);
+    if (!entry) return;
+    if (entry.root) entry.root.style.display = '';
     if (entry.wrapper) entry.wrapper.remove();
     STATE.altEditors.delete(field);
   }
 
-      STATE.altEditors.set(field, { wrapper, body: quill.root, root, quill });
+  function applyAltEditors() {
     const enabled = isAltEditorEnabled();
     const fields = Array.from(document.querySelectorAll('textarea'));
     fields.forEach((field) => {
