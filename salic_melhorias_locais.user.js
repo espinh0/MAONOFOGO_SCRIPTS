@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
 // @require      https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/upgradetexteditor.js
-// @version      3.18
+// @version      3.19
 // @description  Salvamento local automatico de campos de texto e ocultacao do botao excluir proposta.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -982,6 +982,11 @@
 
   function getFieldValue(field) {
     const altEntry = getAltEditorEntry(field);
+    if (altEntry && altEntry.editor && typeof altEntry.editor.getContent === 'function') {
+      try {
+        return altEntry.editor.getContent() || '';
+      } catch (_) {}
+    }
     if (altEntry && altEntry.body) {
       return altEntry.body.innerHTML || '';
     }
@@ -1009,7 +1014,14 @@
     const nextValue = value === null || value === undefined ? '' : String(value);
     const altEntry = getAltEditorEntry(field);
     if (altEntry && altEntry.body) {
-      if (altEntry.quill) {
+      if (altEntry.editor && typeof altEntry.editor.setContent === 'function') {
+        try {
+          altEntry.editor.setContent(nextValue);
+          if (typeof altEntry.editor.save === 'function') altEntry.editor.save();
+        } catch (_) {
+          altEntry.body.innerHTML = nextValue;
+        }
+      } else if (altEntry.quill) {
         try {
           altEntry.quill.setText('', 'silent');
           if (nextValue) altEntry.quill.clipboard.dangerouslyPasteHTML(0, nextValue, 'silent');
@@ -1237,6 +1249,20 @@
   function insertHtmlIntoEditor(field, doc, html) {
     if (!html) return false;
     const altEntry = getAltEditorEntry(field);
+    if (altEntry && typeof altEntry.insertContent === 'function') {
+      try {
+        altEntry.insertContent(html);
+        return true;
+      } catch (_) {}
+    }
+    if (altEntry && altEntry.editor && typeof altEntry.editor.insertContent === 'function') {
+      try {
+        if (typeof altEntry.editor.focus === 'function') altEntry.editor.focus();
+        altEntry.editor.insertContent(html);
+        if (typeof altEntry.editor.save === 'function') altEntry.editor.save();
+        return true;
+      } catch (_) {}
+    }
     if (altEntry && altEntry.quill) {
       try {
         const quill = altEntry.quill;
@@ -2204,6 +2230,27 @@
     if (button) button.setAttribute('aria-expanded', 'false');
   }
 
+  function isSettingsMenuOpen(menu) {
+    return Boolean(menu && menu.style.display && menu.style.display !== 'none');
+  }
+
+  function toggleSettingsMenu(button, menu) {
+    if (!button || !menu) return;
+    const shouldOpen = !isSettingsMenuOpen(menu);
+    if (shouldOpen) {
+      positionSettingsMenu(button, menu);
+      button.setAttribute('aria-expanded', 'true');
+      return;
+    }
+    hideSettingsMenu();
+  }
+
+  function closestElement(node, selector) {
+    if (!node) return null;
+    const element = node.nodeType === 1 ? node : node.parentElement;
+    return element && element.closest ? element.closest(selector) : null;
+  }
+
   function findById(id) {
     return Array.from(document.querySelectorAll(`[id="${id}"]`));
   }
@@ -2411,24 +2458,28 @@
     actionsWrap.appendChild(clearScriptCacheButton);
     actionsWrap.appendChild(clearButton);
 
-    button.addEventListener('click', (event) => {
-      event.stopPropagation();
-      const shouldOpen = menu.style.display === 'none' || !menu.style.display;
-      if (shouldOpen) {
-        positionSettingsMenu(button, menu);
-        button.setAttribute('aria-expanded', 'true');
-      } else {
-        hideSettingsMenu();
-        button.setAttribute('aria-expanded', 'false');
-      }
-    });
     menu.addEventListener('click', (event) => event.stopPropagation());
     if (!STATE.settingsListenersReady) {
       STATE.settingsListenersReady = true;
       document.addEventListener('click', (event) => {
+        const activeButton = closestElement(event.target, `#${CONFIG.settingsButtonId}`);
+        if (activeButton) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          toggleSettingsMenu(activeButton, document.getElementById(CONFIG.settingsMenuId));
+          return;
+        }
+
+        const activeMenu = document.getElementById(CONFIG.settingsMenuId);
+        if (!isSettingsMenuOpen(activeMenu)) return;
+        if (activeMenu.contains(event.target)) return;
+        hideSettingsMenu();
+      }, true);
+      document.addEventListener('click', (event) => {
         const activeMenu = document.getElementById(CONFIG.settingsMenuId);
         const activeButton = document.getElementById(CONFIG.settingsButtonId);
-        if (!activeMenu || activeMenu.style.display === 'none') return;
+        if (!isSettingsMenuOpen(activeMenu)) return;
         if ((activeButton && activeButton.contains(event.target)) || activeMenu.contains(event.target)) return;
         hideSettingsMenu();
       });

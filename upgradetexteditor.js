@@ -3,53 +3,37 @@
 
   const CONFIG = {
     apiName: '__tmPowerSalicUpgradeTextEditor',
-    version: '1.0.2',
+    version: '2.0.0',
     settingKey: 'tm-salic-setting-alt-editor',
     settingEventName: 'tm-salic-setting-change',
     settingOn: '1',
-    ignoreSelector: '.tm-localmem-ignore, [data-tm-localmem="off"]',
-    reactSelectIgnoreSelector: '.tm-reactselect-wrapper, [data-tm-reactselect-host="1"]',
-    styleId: 'tm-salic-upgrade-text-editor-css',
-    quillCssId: 'tm-salic-quill-css',
-    quillJsId: 'tm-salic-quill-js',
-    quillCssUrl: 'https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css',
-    quillJsUrl: 'https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js',
-    batchSize: 1,
-    batchDelayMs: 80
+    tinymceVersion: '8.5.0',
+    textareaSelector: 'textarea[name], textarea#resumodoprojeto',
+    initDelayMs: 80
   };
 
-  if (window[CONFIG.apiName] && window[CONFIG.apiName].version) {
-    if (window[CONFIG.apiName].version === CONFIG.version) {
-      try {
-        if (typeof window[CONFIG.apiName].apply === 'function') window[CONFIG.apiName].apply();
-      } catch (_) {}
-      return;
-    }
+  const BASE = `https://cdn.jsdelivr.net/npm/tinymce@${CONFIG.tinymceVersion}`;
+  const SRC = `${BASE}/tinymce.min.js`;
+
+  if (window[CONFIG.apiName] && window[CONFIG.apiName].version === CONFIG.version) {
     try {
-      if (typeof window[CONFIG.apiName].dispose === 'function') {
-        window[CONFIG.apiName].dispose();
-      } else if (typeof window[CONFIG.apiName].apply === 'function') {
-        window[CONFIG.apiName].apply();
-      }
+      window[CONFIG.apiName].apply();
+    } catch (_) {}
+    return;
+  }
+  if (window[CONFIG.apiName] && typeof window[CONFIG.apiName].dispose === 'function') {
+    try {
+      window[CONFIG.apiName].dispose();
     } catch (_) {}
   }
 
-  if (window.__tmPowerSalicUpgradeTextEditorLoading) {
-    return;
-  }
-  window.__tmPowerSalicUpgradeTextEditorLoading = true;
-
   const STATE = {
-    editors: new WeakMap(),
-    quillPromise: null,
-    observerTimer: null,
-    batchTimer: null,
-    queue: [],
-    queuedFields: new Set(),
-    editorFields: new Set(),
-    observer: null,
+    entries: new WeakMap(),
+    fields: new Set(),
+    tinyPromise: null,
+    oldTinyMce: window.tinymce || window.tinyMCE || null,
+    initTimer: null,
     applying: false,
-    pendingFields: new WeakSet(),
     settingListener: null
   };
 
@@ -67,422 +51,292 @@
     }
   }
 
-  function getTinyMceEditor(field) {
-    const tinymceGlobal = window.tinymce || window.tinyMCE;
-    if (!tinymceGlobal || !field || !field.id) return null;
+  function decodeHtml(value) {
+    const el = document.createElement('textarea');
+    el.innerHTML = value || '';
+    return el.value;
+  }
+
+  function getOldEditor(field) {
+    if (!field || !field.id) return null;
+    const oldTiny = STATE.oldTinyMce;
     try {
-      return tinymceGlobal.get(field.id) || null;
+      return oldTiny?.get?.(field.id) || oldTiny?.EditorManager?.get?.(field.id) || null;
     } catch (_) {
       return null;
     }
   }
 
-  function getEditorIframe(field) {
-    if (!field || field.tagName.toLowerCase() !== 'textarea') return null;
-    if (!field.id) return null;
-    return document.getElementById(`${field.id}_ifr`);
-  }
-
-  function getLegacyEditorToolbarRoot(iframe) {
-    if (!iframe) return null;
-    let node = iframe.parentElement;
-    while (node && node !== document.body && node !== document.documentElement) {
-      const hasToolbar = Boolean(node.querySelector(
-        '.mce-toolbar, .mce-toolbar-grp, .mce-menubar, .tox-toolbar, .tox-toolbar__primary, .tox-editor-header, [role="toolbar"]'
-      ));
-      if (hasToolbar && node.contains(iframe)) return node;
-      node = node.parentElement;
+  function getOldEditorContainer(field) {
+    if (!field || !field.id) return null;
+    const iframe = document.getElementById(`${field.id}_ifr`);
+    if (iframe) {
+      return iframe.closest('.tox-tinymce')
+        || iframe.closest('.mce-tinymce')
+        || iframe.closest('.mceEditor')
+        || iframe.closest('table.mceLayout')
+        || iframe.closest('.mce-container')
+        || iframe.closest('.mce-panel')
+        || iframe.parentElement;
+    }
+    const oldEditor = getOldEditor(field);
+    if (oldEditor && typeof oldEditor.getContainer === 'function') {
+      try {
+        return oldEditor.getContainer();
+      } catch (_) {}
     }
     return null;
   }
 
-  function getEditorRoot(field) {
-    if (!field || field.tagName.toLowerCase() !== 'textarea') return null;
-    const iframe = getEditorIframe(field);
-    if (field.id) {
-      const knownRoot = document.getElementById(`${field.id}_tbl`)
-        || document.getElementById(`${field.id}_parent`)
-        || document.getElementById(`${field.id}_container`);
-      if (knownRoot) return knownRoot;
-    }
-    const toolbarRoot = getLegacyEditorToolbarRoot(iframe);
-    if (toolbarRoot) return toolbarRoot;
-    const editor = getTinyMceEditor(field);
-    if (editor && typeof editor.getContainer === 'function') {
+  function getSourceHtml(field) {
+    const oldEditor = getOldEditor(field);
+    if (oldEditor && typeof oldEditor.getContent === 'function') {
       try {
-        const container = editor.getContainer();
-        if (container) return container;
+        return oldEditor.getContent() || '';
       } catch (_) {}
     }
-    if (!iframe) return null;
-    return iframe.closest('.tox-tinymce')
-      || iframe.closest('.mce-tinymce')
-      || iframe.closest('.mceEditor')
-      || iframe.closest('table.mceLayout')
-      || iframe.closest('.mce-container')
-      || iframe.closest('.mce-panel')
-      || iframe.parentElement;
+    return decodeHtml(field.value || '');
   }
 
-  function getFieldValue(field) {
-    const iframe = getEditorIframe(field);
-    if (iframe && iframe.contentDocument && iframe.contentDocument.body) {
-      return iframe.contentDocument.body.innerHTML || '';
-    }
-    return field.value || '';
-  }
-
-  function updateHiddenTextarea(field, value) {
-    if (!field || field.tagName.toLowerCase() !== 'textarea') return;
+  function setNativeTextareaValue(field, value) {
+    const html = value === null || value === undefined ? '' : String(value);
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-    if (setter) setter.call(field, value);
-    else field.value = value;
+    if (setter) setter.call(field, html);
+    else field.value = html;
+    field.setAttribute('value', html);
   }
 
-  function setLegacyEditorContent(field, value) {
-    const nextValue = value === null || value === undefined ? '' : String(value);
-    const editor = getTinyMceEditor(field);
-    if (editor && typeof editor.setContent === 'function') {
-      try {
-        editor.setContent(nextValue);
-      } catch (_) {}
-    }
-    const iframe = getEditorIframe(field);
-    if (iframe && iframe.contentDocument && iframe.contentDocument.body) {
-      try {
-        iframe.contentDocument.body.innerHTML = nextValue;
-      } catch (_) {}
-    }
-    updateHiddenTextarea(field, nextValue);
-  }
+  function syncToSource(editor, field) {
+    const html = editor && typeof editor.getContent === 'function' ? editor.getContent() : '';
+    setNativeTextareaValue(field, html);
 
-  function dispatchFieldChange(field) {
+    const oldEditor = getOldEditor(field);
+    if (oldEditor && oldEditor !== editor && typeof oldEditor.setContent === 'function') {
+      try {
+        oldEditor.setContent(html);
+        if (typeof oldEditor.save === 'function') oldEditor.save();
+      } catch (_) {}
+    }
+
     field.dispatchEvent(new Event('input', { bubbles: true }));
     field.dispatchEvent(new Event('change', { bubbles: true }));
+
+    if (window.jQuery) {
+      try {
+        window.jQuery(field).val(html).trigger('input').trigger('change');
+      } catch (_) {}
+    }
+  }
+
+  function loadTinyMce8() {
+    if (window.tinymce && String(window.tinymce.majorVersion) === '8') {
+      return Promise.resolve(window.tinymce);
+    }
+    if (STATE.tinyPromise) return STATE.tinyPromise;
+
+    STATE.tinyPromise = new Promise((resolve, reject) => {
+      const existing = document.querySelector(`script[src="${SRC}"]`);
+      if (existing) {
+        existing.addEventListener('load', () => resolve(window.tinymce));
+        existing.addEventListener('error', reject);
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = SRC;
+      script.onload = () => resolve(window.tinymce);
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+    return STATE.tinyPromise;
   }
 
   function isEligibleField(field) {
-    if (!field) return false;
-    const tag = field.tagName ? field.tagName.toLowerCase() : '';
-    if (tag !== 'textarea') return false;
-    if (field.matches(CONFIG.ignoreSelector)) return false;
-    if (field.closest && field.closest(CONFIG.ignoreSelector)) return false;
-    if (field.closest && field.closest(CONFIG.reactSelectIgnoreSelector)) return false;
-    if (field.id && /^react-select-\d+-input$/i.test(field.id)) return false;
-    if (field.getAttribute('role') === 'combobox') return false;
-    if (field.getAttribute('aria-haspopup')) return false;
-    if (field.getAttribute('aria-autocomplete')) return false;
-    if (field.hasAttribute('aria-expanded')) return false;
-    if (field.closest && field.closest('[role="combobox"], [role="listbox"], [aria-haspopup], [aria-expanded]')) return false;
-    if (field.closest && field.closest('.select2, .select2-container, .chosen-container, .dropdown, .autocomplete')) return false;
-    if (field.getAttribute('data-tm-localmem') === 'off') return false;
-    return true;
+    if (!field || field.tagName?.toLowerCase() !== 'textarea') return false;
+    if (field.dataset.tmUpgradeTextEditor === '1') return false;
+    if (field.dataset.tmLocalmem === 'off') return false;
+    if (field.closest('.tm-salic-alt-editor, .tm-reactselect-wrapper, [data-tm-reactselect-host="1"]')) return false;
+    return Boolean(field.name || field.id === 'resumodoprojeto');
   }
 
-  function isVisibleNode(node) {
-    if (!node || !node.isConnected) return false;
-    const style = window.getComputedStyle(node);
-    if (!style || style.display === 'none' || style.visibility === 'hidden') return false;
-    const rect = node.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
+  function createMirror(field) {
+    const mirror = document.createElement('textarea');
+    const identity = field.id || field.name || `field_${Date.now()}`;
+    mirror.id = `${identity}_upgraded_text_editor`;
+    mirror.className = 'tm-salic-alt-editor';
+    mirror.dataset.tmReactselect = 'off';
+    mirror.dataset.tmLocalmem = 'off';
+    mirror.value = getSourceHtml(field);
+    mirror.style.width = '100%';
+    mirror.style.minHeight = '320px';
+
+    const oldContainer = getOldEditorContainer(field);
+    if (oldContainer) {
+      oldContainer.insertAdjacentElement('afterend', mirror);
+    } else {
+      field.insertAdjacentElement('afterend', mirror);
+    }
+    return { mirror, oldContainer };
   }
 
-  function isInitializableField(field) {
-    if (!isEligibleField(field)) return false;
-    if (STATE.editors.get(field)) return false;
-    const root = getEditorRoot(field);
-    return Boolean(root && isVisibleNode(root));
+  function hideLegacy(field, oldContainer) {
+    const previous = {
+      fieldPosition: field.style.position || '',
+      fieldLeft: field.style.left || '',
+      fieldVisibility: field.style.visibility || '',
+      fieldDisplay: field.style.display || '',
+      containerDisplay: oldContainer ? oldContainer.style.display || '' : ''
+    };
+
+    field.style.display = 'block';
+    field.style.visibility = 'hidden';
+    field.style.position = 'absolute';
+    field.style.left = '-99999px';
+
+    if (oldContainer) {
+      oldContainer.classList.add('tm-salic-legacy-editor-hidden');
+      oldContainer.style.setProperty('display', 'none', 'important');
+      oldContainer.setAttribute('aria-hidden', 'true');
+    }
+
+    return previous;
   }
 
-  function injectStyles() {
-    if (!document.head || document.getElementById(CONFIG.styleId)) return;
-    const style = document.createElement('style');
-    style.id = CONFIG.styleId;
-    style.textContent = `
-    .tm-salic-alt-editor {
-      border: 1px solid #cbd5e1;
-      border-radius: .5rem;
-      overflow: hidden;
-      background: #fff;
-      box-shadow: 0 6px 18px rgba(15, 23, 42, .08);
+  function restoreLegacy(field, entry) {
+    field.style.position = entry.previous.fieldPosition;
+    field.style.left = entry.previous.fieldLeft;
+    field.style.visibility = entry.previous.fieldVisibility;
+    field.style.display = entry.previous.fieldDisplay;
+
+    if (entry.oldContainer) {
+      entry.oldContainer.classList.remove('tm-salic-legacy-editor-hidden');
+      entry.oldContainer.style.display = entry.previous.containerDisplay;
+      entry.oldContainer.removeAttribute('aria-hidden');
     }
-    .tm-salic-legacy-editor-hidden {
-      display: none !important;
-    }
-    .tm-salic-alt-editor .ql-toolbar.ql-snow {
-      border: 0;
-      border-bottom: 1px solid #e2e8f0;
-      background: #f8fafc;
-    }
-    .tm-salic-alt-editor .ql-container.ql-snow {
-      border: 0;
-      font: 400 .9rem/1.5 Arial, sans-serif;
-      color: #111827;
-    }
-    .tm-salic-alt-editor .ql-editor {
-      min-height: 260px;
-      font: 400 16px/1.5 Arial, sans-serif;
-      color: #111827;
-      background: #fff;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-    }
-    .tm-salic-alt-editor .ql-editor p,
-    .tm-salic-alt-editor .ql-editor ol,
-    .tm-salic-alt-editor .ql-editor ul {
-      margin: 0 0 .5em;
-    }
-    .tm-salic-alt-editor .ql-editor .ql-size-small {
-      font-size: .75em;
-    }
-    .tm-salic-alt-editor .ql-editor .ql-size-large {
-      font-size: 1.5em;
-    }
-    .tm-salic-alt-editor .ql-editor .ql-size-huge {
-      font-size: 2.5em;
-    }
-    .tm-salic-alt-editor .ql-toolbar select,
-    .tm-salic-alt-editor .ql-toolbar .ql-picker {
-      max-width: none;
-    }
-    .tm-salic-alt-editor .ql-toolbar .ql-size {
-      width: 5.5rem;
-    }
-    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="12px"]::before,
-    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="12px"]::before {
-      content: "12px";
-      font-size: 12px;
-    }
-    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="14px"]::before,
-    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="14px"]::before {
-      content: "14px";
-      font-size: 14px;
-    }
-    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="16px"]::before,
-    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="16px"]::before {
-      content: "16px";
-      font-size: 16px;
-    }
-    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="18px"]::before,
-    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="18px"]::before {
-      content: "18px";
-      font-size: 18px;
-    }
-    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="24px"]::before,
-    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="24px"]::before {
-      content: "24px";
-      font-size: 24px;
-    }
-    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="32px"]::before,
-    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="32px"]::before {
-      content: "32px";
-      font-size: 32px;
-    }
-    .tm-salic-alt-editor .ql-size .ql-picker-label::before {
-      line-height: 1;
-      vertical-align: middle;
-    }
-    .tm-salic-alt-editor .ql-size .ql-picker-options {
-      min-width: 6rem;
-    }`;
-    document.head.appendChild(style);
   }
 
-  function loadQuill() {
-    if (window.Quill) return Promise.resolve(window.Quill);
-    if (STATE.quillPromise) return STATE.quillPromise;
-    STATE.quillPromise = new Promise((resolve, reject) => {
-      if (!document.getElementById(CONFIG.quillCssId)) {
-        const link = document.createElement('link');
-        link.id = CONFIG.quillCssId;
-        link.rel = 'stylesheet';
-        link.href = CONFIG.quillCssUrl;
-        document.head.appendChild(link);
-      }
-      const existingScript = document.getElementById(CONFIG.quillJsId);
-      if (existingScript) {
-        if (window.Quill) resolve(window.Quill);
-        else existingScript.addEventListener('load', () => resolve(window.Quill));
+  async function createEditor(field) {
+    if (!isEnabled() || !isEligibleField(field) || STATE.entries.has(field)) return;
+    field.dataset.tmUpgradeTextEditor = '1';
+
+    const { mirror, oldContainer } = createMirror(field);
+    const previous = hideLegacy(field, oldContainer);
+
+    try {
+      const tiny = await loadTinyMce8();
+      if (!tiny || !isEnabled()) {
+        mirror.remove();
+        restoreLegacy(field, { previous, oldContainer });
+        field.dataset.tmUpgradeTextEditor = '';
         return;
       }
-      const script = document.createElement('script');
-      script.id = CONFIG.quillJsId;
-      script.src = CONFIG.quillJsUrl;
-      script.onload = () => resolve(window.Quill);
-      script.onerror = () => reject(new Error('Failed to load Quill'));
-      document.head.appendChild(script);
-    });
-    return STATE.quillPromise;
-  }
 
-  function registerQuillFormats() {
-    if (!window.Quill) return;
-    try {
-      const SizeStyle = window.Quill.import('attributors/style/size');
-      SizeStyle.whitelist = ['10px', '12px', '14px', '16px', '18px', '24px', '32px', '8pt', '10pt', '12pt', '14pt', '18pt', '24pt', '36pt'];
-      window.Quill.register(SizeStyle, true);
-    } catch (_) {}
-  }
-
-  function pauseObserver() {
-    if (!STATE.observer) return;
-    try {
-      STATE.observer.disconnect();
-    } catch (_) {}
-  }
-
-  function resumeObserver() {
-    if (!STATE.observer) return;
-    try {
-      STATE.observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
-    } catch (_) {}
-  }
-
-  function createEditor(field) {
-    if (!field || STATE.editors.get(field)) return;
-    if (!isEnabled()) return;
-    const root = getEditorRoot(field);
-    if (!root) return;
-    if (!isVisibleNode(root)) return;
-
-    if (!window.Quill) {
-      if (STATE.pendingFields.has(field)) return;
-      STATE.pendingFields.add(field);
-      loadQuill().then(() => {
-        STATE.pendingFields.delete(field);
-        createEditor(field);
-      }).catch(() => {
-        STATE.pendingFields.delete(field);
-      });
-      return;
-    }
-
-    registerQuillFormats();
-    injectStyles();
-    pauseObserver();
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'tm-salic-alt-editor';
-    wrapper.dataset.tmAltEditor = '1';
-    wrapper.dataset.tmReactselect = 'off';
-
-    const editorHost = document.createElement('div');
-    editorHost.className = 'tm-salic-alt-body';
-    editorHost.dataset.tmReactselect = 'off';
-    wrapper.appendChild(editorHost);
-
-    try {
-      const quill = new window.Quill(editorHost, {
-        theme: 'snow',
-        modules: {
-          toolbar: [
-            ['bold', 'italic', 'underline'],
-            [{ color: [] }, { background: [] }],
-            [{ size: ['12px', '14px', '16px', '18px', '24px', '32px'] }],
-            [{ list: 'ordered' }, { list: 'bullet' }],
-            ['link'],
-            ['clean']
-          ]
+      await tiny.init({
+        target: mirror,
+        license_key: 'gpl',
+        base_url: BASE,
+        suffix: '.min',
+        height: 420,
+        menubar: 'edit view format tools help',
+        toolbar: [
+          'undo redo | blocks fontsize | bold italic underline strikethrough',
+          'forecolor backcolor | alignleft aligncenter alignright alignjustify',
+          'bullist numlist outdent indent',
+          'removeformat | code fullscreen preview help'
+        ].join(' '),
+        plugins: [
+          'lists',
+          'code',
+          'autoresize',
+          'wordcount',
+          'fullscreen',
+          'preview',
+          'charmap',
+          'visualblocks',
+          'searchreplace',
+          'help'
+        ].join(' '),
+        contextmenu: false,
+        fontsize_formats: '12px 14px 16px 18px 20px 24px 32px',
+        paste_as_text: false,
+        paste_webkit_styles: 'all',
+        valid_elements: '*[*]',
+        verify_html: false,
+        content_style: `
+          body {
+            max-width: 1200px;
+            margin: 32px auto;
+            padding: 0 24px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+          }
+          p {
+            margin-bottom: 0.8em;
+          }
+        `,
+        setup(editor) {
+          editor.on('init', () => {
+            editor.setContent(getSourceHtml(field) || '');
+            syncToSource(editor, field);
+          });
+          editor.on('change keyup input undo redo setcontent', () => {
+            syncToSource(editor, field);
+          });
         }
       });
 
-      const toolbar = wrapper.querySelector('.ql-toolbar');
-      if (toolbar) {
-        toolbar.dataset.tmReactselect = 'off';
-        toolbar.classList.add('tm-reactselect-ignore');
-        toolbar.querySelectorAll('select').forEach((select) => {
-          select.dataset.tmReactselect = 'off';
-          select.classList.add('tm-reactselect-ignore');
-        });
-      }
+      const editor = tiny.get(mirror.id);
+      if (!editor) throw new Error('TinyMCE 8 editor was not created');
 
-      const initialHtml = getFieldValue(field);
-      if (initialHtml) quill.clipboard.dangerouslyPasteHTML(initialHtml, 'silent');
-
-      const onTextChange = () => {
-        const value = quill.root.innerHTML || '';
-        updateHiddenTextarea(field, value);
-        dispatchFieldChange(field);
+      const entry = {
+        editor,
+        mirror,
+        wrapper: editor.getContainer ? editor.getContainer() : mirror,
+        body: editor.getBody ? editor.getBody() : mirror,
+        root: oldContainer,
+        oldContainer,
+        previous,
+        insertContent(html) {
+          editor.insertContent(html);
+          syncToSource(editor, field);
+        }
       };
-      quill.on('text-change', onTextChange);
 
-      const previousDisplay = root.style.display || '';
-      const previousAriaHidden = root.getAttribute('aria-hidden');
-      root.classList.add('tm-salic-legacy-editor-hidden');
-      root.style.setProperty('display', 'none', 'important');
-      root.setAttribute('aria-hidden', 'true');
-      root.insertAdjacentElement('afterend', wrapper);
-
-      STATE.editors.set(field, {
-        wrapper,
-        body: quill.root,
-        root,
-        quill,
-        previousDisplay,
-        previousAriaHidden
-      });
-      STATE.editorFields.add(field);
-    } finally {
-      resumeObserver();
+      STATE.entries.set(field, entry);
+      STATE.fields.add(field);
+    } catch (err) {
+      console.error('[Power SALIC] Falha ao ativar editor alternativo:', err);
+      mirror.remove();
+      restoreLegacy(field, { previous, oldContainer });
+      field.dataset.tmUpgradeTextEditor = '';
     }
   }
 
   function removeEditor(field) {
-    const entry = STATE.editors.get(field);
+    const entry = STATE.entries.get(field);
     if (!entry) return;
-    const value = entry.body ? entry.body.innerHTML || '' : getFieldValue(field);
-    setLegacyEditorContent(field, value);
-    if (entry.root) {
-      entry.root.classList.remove('tm-salic-legacy-editor-hidden');
-      entry.root.style.display = entry.previousDisplay || '';
-      if (entry.previousAriaHidden === null || entry.previousAriaHidden === undefined) {
-        entry.root.removeAttribute('aria-hidden');
-      } else {
-        entry.root.setAttribute('aria-hidden', entry.previousAriaHidden);
-      }
-    }
-    if (entry.wrapper) entry.wrapper.remove();
-    STATE.editors.delete(field);
-    STATE.editorFields.delete(field);
-    dispatchFieldChange(field);
+
+    try {
+      syncToSource(entry.editor, field);
+    } catch (_) {}
+    try {
+      entry.editor.remove();
+    } catch (_) {}
+
+    if (entry.mirror && entry.mirror.isConnected) entry.mirror.remove();
+    restoreLegacy(field, entry);
+    field.dataset.tmUpgradeTextEditor = '';
+    STATE.entries.delete(field);
+    STATE.fields.delete(field);
   }
 
-  function clearQueue() {
-    STATE.queue = [];
-    STATE.queuedFields.clear();
-    if (STATE.batchTimer) {
-      clearTimeout(STATE.batchTimer);
-      STATE.batchTimer = null;
-    }
-  }
-
-  function processQueue() {
-    STATE.batchTimer = null;
-    if (!isEnabled()) {
-      clearQueue();
+  function scheduleApply() {
+    if (STATE.initTimer) clearTimeout(STATE.initTimer);
+    STATE.initTimer = setTimeout(() => {
+      STATE.initTimer = null;
       apply();
-      return;
-    }
-
-    let processed = 0;
-    while (STATE.queue.length && processed < CONFIG.batchSize) {
-      const field = STATE.queue.shift();
-      STATE.queuedFields.delete(field);
-      if (field && field.isConnected && isInitializableField(field)) {
-        createEditor(field);
-        processed += 1;
-      }
-    }
-
-    if (STATE.queue.length) {
-      STATE.batchTimer = setTimeout(processQueue, CONFIG.batchDelayMs);
-    }
-  }
-
-  function enqueueField(field) {
-    if (!field || STATE.queuedFields.has(field) || STATE.editors.get(field)) return;
-    STATE.queuedFields.add(field);
-    STATE.queue.push(field);
+    }, CONFIG.initDelayMs);
   }
 
   function apply() {
@@ -490,75 +344,50 @@
     STATE.applying = true;
     try {
       if (!isEnabled()) {
-        clearQueue();
-        Array.from(STATE.editorFields).forEach((field) => removeEditor(field));
+        Array.from(STATE.fields).forEach((field) => removeEditor(field));
         return;
       }
-
-      const fields = Array.from(document.querySelectorAll('textarea'));
-      fields.forEach((field) => {
-        if (isInitializableField(field)) enqueueField(field);
+      Array.from(document.querySelectorAll(CONFIG.textareaSelector)).forEach((field) => {
+        if (isEligibleField(field)) createEditor(field);
       });
-      if (STATE.queue.length && !STATE.batchTimer) {
-        STATE.batchTimer = setTimeout(processQueue, 0);
-      }
     } finally {
       STATE.applying = false;
     }
   }
 
-  function scheduleApply() {
-    if (STATE.observerTimer) clearTimeout(STATE.observerTimer);
-    STATE.observerTimer = setTimeout(() => {
-      STATE.observerTimer = null;
-      apply();
-    }, 200);
+  function getEntry(field) {
+    const entry = STATE.entries.get(field);
+    if (!entry) return null;
+    if (entry.editor && typeof entry.editor.getBody === 'function') {
+      entry.body = entry.editor.getBody();
+    }
+    return entry;
+  }
+
+  function dispose() {
+    if (STATE.initTimer) {
+      clearTimeout(STATE.initTimer);
+      STATE.initTimer = null;
+    }
+    if (STATE.settingListener) {
+      window.removeEventListener(CONFIG.settingEventName, STATE.settingListener);
+      STATE.settingListener = null;
+    }
+    Array.from(STATE.fields).forEach((field) => removeEditor(field));
   }
 
   window[CONFIG.apiName] = {
     version: CONFIG.version,
     apply,
-    getEntry(field) {
-      return STATE.editors.get(field) || null;
-    },
-    dispose() {
-      if (STATE.observer) {
-        STATE.observer.disconnect();
-        STATE.observer = null;
-      }
-      if (STATE.observerTimer) {
-        clearTimeout(STATE.observerTimer);
-        STATE.observerTimer = null;
-      }
-      clearQueue();
-      if (STATE.settingListener) {
-        window.removeEventListener(CONFIG.settingEventName, STATE.settingListener);
-        STATE.settingListener = null;
-      }
-    }
+    getEntry,
+    dispose
   };
 
   STATE.settingListener = (event) => {
     if (!event.detail || event.detail.key !== CONFIG.settingKey) return;
-    apply();
+    scheduleApply();
   };
   window.addEventListener(CONFIG.settingEventName, STATE.settingListener);
 
-  STATE.observer = new MutationObserver((mutations) => {
-    const ownMutation = mutations.every((mutation) => {
-      const nodes = [mutation.target].concat(Array.from(mutation.addedNodes || []));
-      return nodes.every((node) => {
-        if (!node || node.nodeType !== 1) return true;
-        if (node.id === CONFIG.styleId || node.id === CONFIG.quillCssId || node.id === CONFIG.quillJsId) return true;
-        if (node.classList && (node.classList.contains('tm-salic-alt-editor') || node.classList.contains('tm-salic-legacy-editor-hidden'))) return true;
-        return Boolean(node.closest && node.closest('.tm-salic-alt-editor'));
-      });
-    });
-    if (ownMutation) return;
-    scheduleApply();
-  });
-  STATE.observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
-
-  apply();
-  window.__tmPowerSalicUpgradeTextEditorLoading = false;
+  scheduleApply();
 })();
