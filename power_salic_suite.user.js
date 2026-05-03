@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Power Salic Suite
 // @namespace    power-salic
-// @version      1.1.12
+// @version      1.1.13
 // @description  Loader dinamico do Power SALIC e ReactSelect com modo developer via localhost.
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js
@@ -35,22 +35,22 @@
     forceParam: 'tm_ps_update',
     devParam: 'tm_ps_dev',
     devKey: 'tm-salic-suite-dev-mode',
-    buildToken: '1.1.12',
+    buildToken: '1.1.13',
     settingOn: '1',
     settingOff: '0',
 
     productionScriptUrls: [
+      'https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/upgradetexteditor.js',
       'https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js',
-      'https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js',
-      'https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/upgradetexteditor.js'
+      'https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js'
     ],
 
     // VS Code Live Server geralmente usa http://127.0.0.1:5500
     // Ajuste a pasta se seus arquivos estiverem dentro de subdiretório.
     developerScriptUrls: [
+      'http://127.0.0.1:5500/upgradetexteditor.js',
       'http://127.0.0.1:5500/salic_melhorias_locais.user.js',
-      'http://127.0.0.1:5500/reactselect_universal.user.js',
-      'http://127.0.0.1:5500/upgradetexteditor.js'
+      'http://127.0.0.1:5500/reactselect_universal.user.js'
     ]
   };
 
@@ -141,29 +141,45 @@
     eval(`${source}\n//# sourceURL=${url}`);
   }
 
+  async function loadScriptList(scriptUrls, forceToken, devMode) {
+    const scripts = [];
+
+    for (const baseUrl of scriptUrls) {
+      const url = buildUrl(baseUrl, forceToken, devMode);
+      scripts.push({
+        url,
+        source: await fetchText(url)
+      });
+    }
+
+    for (const script of scripts) {
+      try {
+        runScript(script.source, script.url);
+      } catch (err) {
+        console.error('[Power Salic Suite] Script error:', script.url, err);
+        throw err;
+      }
+    }
+  }
+
   async function loadScripts() {
     const devMode = isDeveloperMode();
     const forceToken = getForceToken();
-
-    const scriptUrls = devMode
-      ? CONFIG.developerScriptUrls
-      : CONFIG.productionScriptUrls;
 
     console.info(
       `[Power Salic Suite] Loading in ${devMode ? 'DEVELOPER' : 'PRODUCTION'} mode`
     );
 
-    for (const baseUrl of scriptUrls) {
-      const url = buildUrl(baseUrl, forceToken, devMode);
-      const source = await fetchText(url);
-
+    if (devMode) {
       try {
-        runScript(source, url);
+        await loadScriptList(CONFIG.developerScriptUrls, forceToken, true);
+        return;
       } catch (err) {
-        console.error('[Power Salic Suite] Script error:', url, err);
-        throw err;
+        console.warn('[Power Salic Suite] Developer load failed; falling back to production.', err);
       }
     }
+
+    await loadScriptList(CONFIG.productionScriptUrls, forceToken, false);
   }
 
   loadScripts().catch((err) => {
