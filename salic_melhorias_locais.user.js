@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
 // @require      https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/upgradetexteditor.js
-// @version      3.16
+// @version      3.17
 // @description  Salvamento local automatico de campos de texto e ocultacao do botao excluir proposta.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -58,7 +58,14 @@
     settingOn: '1',
     settingOff: '0',
     suiteInstallUrl: 'https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js',
-    suiteForceParam: 'tm_ps_update'
+    suiteForceParam: 'tm_ps_update',
+    suiteDevParam: 'tm_ps_dev',
+    suiteDevKey: 'tm-salic-suite-dev-mode',
+    suiteScriptUrlPatterns: [
+      'salic_melhorias_locais.user.js',
+      'reactselect_universal.user.js',
+      'upgradetexteditor.js'
+    ]
   };
 
   const STATE = {
@@ -208,6 +215,65 @@
       const hash = window.location.hash || '';
       const sep = base.includes('?') ? '&' : '?';
       window.location.replace(`${base}${sep}${CONFIG.suiteForceParam}=${Date.now()}${hash}`);
+    }
+  }
+
+  async function clearScriptCacheAndRefresh() {
+    try {
+      if (window.caches && typeof window.caches.keys === 'function') {
+        const cacheNames = await window.caches.keys();
+        await Promise.all(cacheNames.map(async (cacheName) => {
+          try {
+            const cache = await window.caches.open(cacheName);
+            const requests = await cache.keys();
+            await Promise.all(requests
+              .filter((request) => CONFIG.suiteScriptUrlPatterns.some((pattern) => request.url.includes(pattern)))
+              .map((request) => cache.delete(request)));
+          } catch (_) {}
+        }));
+      }
+    } catch (_) {}
+    refreshScriptsWithoutReinstall();
+  }
+
+  function getQueryParam(name) {
+    try {
+      return new URLSearchParams(window.location.search).get(name) || '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function isSuiteDevModeEnabled() {
+    const value = getQueryParam(CONFIG.suiteDevParam).toLowerCase();
+    if (
+      value === '1' ||
+      value === 'true' ||
+      value === 'yes' ||
+      value === 'on'
+    ) {
+      return true;
+    }
+    if (
+      value === '0' ||
+      value === 'false' ||
+      value === 'no' ||
+      value === 'off'
+    ) {
+      return false;
+    }
+    return getSetting(CONFIG.suiteDevKey, false);
+  }
+
+  function setSuiteDevMode(enabled) {
+    setSetting(CONFIG.suiteDevKey, enabled);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete(CONFIG.suiteForceParam);
+      url.searchParams.delete(CONFIG.suiteDevParam);
+      window.location.replace(url.toString());
+    } catch (_) {
+      refreshScriptsWithoutReinstall();
     }
   }
 
@@ -2213,6 +2279,20 @@
       hideSettingsMenu();
     });
 
+    const clearScriptCacheButton = document.createElement('button');
+    clearScriptCacheButton.type = 'button';
+    clearScriptCacheButton.innerHTML = '<i class="bi bi-eraser tm-salic-btn-icon" aria-hidden="true"></i><span>Limpar cache dos scripts</span>';
+    clearScriptCacheButton.className = 'tm-salic-btn tm-salic-btn-secondary';
+    clearScriptCacheButton.addEventListener('click', () => {
+      clearScriptCacheAndRefresh();
+      hideSettingsMenu();
+    });
+
+    const devModeToggle = createSettingToggle('Modo dev', 'Carrega scripts locais do Live Server.', isSuiteDevModeEnabled(), (checked) => {
+      setSuiteDevMode(checked);
+      hideSettingsMenu();
+    });
+
     const autoSaveToggle = createSettingToggle('Autosave', 'Salva textos longos enquanto voce digita.', isAutoSaveEnabled(), (checked) => {
       setSetting(CONFIG.autoSaveKey, checked);
       if (checked) {
@@ -2275,6 +2355,7 @@
     actionsRow.appendChild(exportHtmlButton);
     actionsWrap.appendChild(actionsRow);
     actionsWrap.appendChild(updateScriptsButton);
+    actionsWrap.appendChild(clearScriptCacheButton);
     actionsWrap.appendChild(clearButton);
 
     button.addEventListener('click', (event) => {
@@ -2309,6 +2390,7 @@
     menu.appendChild(reactSelectOriginalToggle);
     menu.appendChild(richPasteToggle);
     menu.appendChild(altEditorToggle);
+    menu.appendChild(devModeToggle);
     menu.appendChild(reactSelectMinOptions);
     menu.appendChild(actionsWrap);
     root.appendChild(button);

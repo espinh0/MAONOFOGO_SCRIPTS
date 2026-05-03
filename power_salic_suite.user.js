@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Power Salic Suite
 // @namespace    power-salic
-// @version      1.1.2
+// @version      1.1.3
 // @description  Loader dinamico do Power SALIC e ReactSelect com modo developer via localhost.
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js
@@ -33,6 +33,9 @@
   const CONFIG = {
     forceParam: 'tm_ps_update',
     devParam: 'tm_ps_dev',
+    devKey: 'tm-salic-suite-dev-mode',
+    settingOn: '1',
+    settingOff: '0',
 
     productionScriptUrls: [
       'https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js',
@@ -57,15 +60,43 @@
     }
   }
 
+  function storageGet(key) {
+    try {
+      if (typeof GM_getValue === 'function') {
+        const value = GM_getValue(key, null);
+        if (value !== null && value !== undefined) return value;
+      }
+    } catch (_) {}
+    try {
+      return localStorage.getItem(key);
+    } catch (_) {
+      return null;
+    }
+  }
+
   function isDeveloperMode() {
     const value = getQueryParam(CONFIG.devParam).toLowerCase();
 
-    return (
+    if (
       value === '1' ||
       value === 'true' ||
       value === 'yes' ||
       value === 'on'
-    );
+    ) {
+      return true;
+    }
+
+    if (
+      value === '0' ||
+      value === 'false' ||
+      value === 'no' ||
+      value === 'off'
+    ) {
+      return false;
+    }
+
+    const stored = storageGet(CONFIG.devKey);
+    return stored === CONFIG.settingOn || stored === true;
   }
 
   function getForceToken() {
