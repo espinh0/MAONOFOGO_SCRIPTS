@@ -3,8 +3,8 @@
 // @namespace    power-salic
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
-// @require      https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/upgradetexteditor.js?v=2.0.3
-// @version      3.22
+// @require      https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/upgradetexteditor.js?v=2.0.10
+// @version      3.29
 // @description  Salvamento local automatico de campos de texto e ocultacao do botao excluir proposta.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -1089,10 +1089,26 @@
       pasteBtn.innerHTML = '<i class="bi bi-clipboard-plus tm-salic-btn-icon" aria-hidden="true"></i><span>Colar formatado</span>';
       pasteBtn.className = 'tm-salic-btn tm-salic-btn-secondary';
       pasteBtn.dataset.tmLocalmemPaste = '1';
+      const saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.innerHTML = '<i class="bi bi-send tm-salic-btn-icon" aria-hidden="true"></i><span>Salvar</span>';
+      saveBtn.className = 'tm-salic-btn tm-salic-btn-secondary';
+      saveBtn.dataset.tmLocalmemSave = '1';
       status.appendChild(text);
       status.appendChild(pasteBtn);
       status.appendChild(btn);
+      status.appendChild(saveBtn);
       anchor.insertAdjacentElement('afterend', status);
+    }
+    if (!status.querySelector('[data-tm-localmem-save="1"]')) {
+      const saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.innerHTML = '<i class="bi bi-send tm-salic-btn-icon" aria-hidden="true"></i><span>Salvar</span>';
+      saveBtn.className = 'tm-salic-btn tm-salic-btn-secondary';
+      saveBtn.dataset.tmLocalmemSave = '1';
+      const restoreBtn = status.querySelector('[data-tm-localmem-restore="1"]');
+      if (restoreBtn) restoreBtn.insertAdjacentElement('afterend', saveBtn);
+      else status.appendChild(saveBtn);
     }
     updatePasteButtonVisibility(field);
     return status;
@@ -1272,6 +1288,53 @@
       } catch (_) {}
     }
     return insertHtmlIntoDocument(doc, html);
+  }
+
+  function findSaveButton(form) {
+    if (!form) return null;
+    const buttons = Array.from(form.querySelectorAll('button[type="submit"], input[type="submit"], button[name="action"], button'));
+    return buttons.find((button) => {
+      const text = `${button.innerText || ''} ${button.value || ''} ${button.getAttribute('aria-label') || ''}`.toLowerCase();
+      return text.includes('salvar');
+    }) || form.querySelector('button[type="submit"], input[type="submit"]');
+  }
+
+  function syncFieldBeforeSubmit(field) {
+    const value = getFieldValue(field);
+    updateHiddenTextarea(field, value);
+    const altEntry = getAltEditorEntry(field);
+    if (altEntry && altEntry.editor && typeof altEntry.editor.save === 'function') {
+      try {
+        altEntry.editor.save();
+      } catch (_) {}
+    }
+    if (!altEntry) {
+      setLegacyEditorContent(field, value);
+    }
+  }
+
+  function submitFieldForm(field) {
+    if (!field) return false;
+    syncFieldBeforeSubmit(field);
+    const form = field.form || field.closest('form');
+    if (!form) return false;
+    const saveButton = findSaveButton(form);
+
+    if (saveButton && typeof form.requestSubmit === 'function') {
+      form.requestSubmit(saveButton);
+      return true;
+    }
+    if (typeof form.requestSubmit === 'function') {
+      form.requestSubmit();
+      return true;
+    }
+    if (saveButton && typeof saveButton.click === 'function') {
+      saveButton.click();
+      return true;
+    }
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    if (typeof form.submit === 'function') form.submit();
+    return true;
   }
 
   function isMeaningfulNode(node) {
@@ -2709,6 +2772,14 @@
     if (pasteBtn) {
       pasteBtn.addEventListener('click', () => {
         pasteFormattedFromClipboard(field);
+      });
+    }
+    const saveBtn = status.querySelector('[data-tm-localmem-save="1"]');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => {
+        if (!submitFieldForm(field)) {
+          window.alert('Nao foi possivel localizar o formulario para salvar.');
+        }
       });
     }
     field.dataset.tmLocalmemProcessed = '1';

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Power Salic Suite
 // @namespace    power-salic
-// @version      1.1.5
+// @version      1.1.12
 // @description  Loader dinamico do Power SALIC e ReactSelect com modo developer via localhost.
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js
@@ -35,7 +35,7 @@
     forceParam: 'tm_ps_update',
     devParam: 'tm_ps_dev',
     devKey: 'tm-salic-suite-dev-mode',
-    buildToken: '1.1.5',
+    buildToken: '1.1.12',
     settingOn: '1',
     settingOff: '0',
 

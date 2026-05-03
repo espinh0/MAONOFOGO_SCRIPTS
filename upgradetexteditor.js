@@ -3,14 +3,20 @@
 
   const CONFIG = {
     apiName: '__tmPowerSalicUpgradeTextEditor',
-    version: '2.0.3',
+    version: '2.0.10',
     settingKey: 'tm-salic-setting-alt-editor',
     settingEventName: 'tm-salic-setting-change',
     settingOn: '1',
     tinymceVersion: '8.5.0',
     textareaSelector: 'textarea[name], textarea#resumodoprojeto',
     initDelayMs: 80,
-    initGapMs: 120
+    initGapMs: 120,
+    fullscreenStyleId: 'tm-salic-upgrade-text-editor-fullscreen-css',
+    zoomKey: 'tm-salic-upgrade-text-editor-zoom',
+    zoomDefault: 100,
+    zoomMin: 80,
+    zoomMax: 180,
+    zoomStep: 10
   };
 
   const BASE = `https://cdn.jsdelivr.net/npm/tinymce@${CONFIG.tinymceVersion}`;
@@ -39,8 +45,193 @@
     queuedFields: new Set(),
     processingQueue: false,
     applying: false,
-    settingListener: null
+    settingListener: null,
+    zoom: 100,
+    zoomButtons: new Set()
   };
+
+  function clampZoom(value) {
+    const number = Number.parseInt(value, 10);
+    if (!Number.isFinite(number)) return CONFIG.zoomDefault;
+    return Math.min(CONFIG.zoomMax, Math.max(CONFIG.zoomMin, number));
+  }
+
+  function storageGet(key) {
+    try {
+      if (typeof GM_getValue === 'function') {
+        const value = GM_getValue(key, null);
+        if (value !== null && value !== undefined) return value;
+      }
+    } catch (_) {}
+    try {
+      return localStorage.getItem(key);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function storageSet(key, value) {
+    try {
+      if (typeof GM_setValue === 'function') GM_setValue(key, value);
+    } catch (_) {}
+    try {
+      localStorage.setItem(key, value);
+    } catch (_) {}
+  }
+
+  function loadZoom() {
+    STATE.zoom = clampZoom(storageGet(CONFIG.zoomKey));
+  }
+
+  function updateZoomButtons() {
+    STATE.zoomButtons.forEach((api) => {
+      try {
+        api.setText(`${STATE.zoom}%`);
+      } catch (_) {}
+    });
+  }
+
+  function applyZoomToEditor(editor) {
+    if (!editor || typeof editor.getBody !== 'function') return;
+    try {
+      const body = editor.getBody();
+      if (!body) return;
+      body.style.zoom = `${STATE.zoom}%`;
+      body.dataset.tmSalicViewZoom = String(STATE.zoom);
+    } catch (_) {}
+  }
+
+  function applyZoomToAllEditors() {
+    Array.from(STATE.fields).forEach((field) => {
+      const entry = STATE.entries.get(field);
+      if (entry) applyZoomToEditor(entry.editor);
+    });
+    updateZoomButtons();
+  }
+
+  function setZoom(value) {
+    STATE.zoom = clampZoom(value);
+    storageSet(CONFIG.zoomKey, String(STATE.zoom));
+    applyZoomToAllEditors();
+  }
+
+  function injectFullscreenStyles() {
+    const doc = PAGE.document || document;
+    if (!doc.head || doc.getElementById(CONFIG.fullscreenStyleId)) return;
+    const style = doc.createElement('style');
+    style.id = CONFIG.fullscreenStyleId;
+    style.textContent = `
+      .tm-salic-editor-fullscreen {
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: 2147483646 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: none !important;
+        max-height: none !important;
+        margin: 0 !important;
+        border-radius: 0 !important;
+        background: #fff !important;
+      }
+      .tm-salic-editor-fullscreen .tox-edit-area,
+      .tm-salic-editor-fullscreen .tox-sidebar-wrap {
+        flex: 1 1 auto !important;
+      }
+      .tm-salic-editor-fullscreen .tox-edit-area__iframe {
+        height: 100% !important;
+      }
+      .tm-salic-editor-fullscreen-active {
+        overflow: hidden !important;
+      }
+      body.tm-salic-editor-fullscreen-active .tox-tinymce-aux,
+      body.tm-salic-editor-fullscreen-active .tox-menu,
+      body.tm-salic-editor-fullscreen-active .tox-dialog-wrap,
+      body.tm-salic-editor-fullscreen-active .tox-pop {
+        z-index: 2147483647 !important;
+      }
+    `;
+    doc.head.appendChild(style);
+  }
+
+  function setupFullscreenButton(editor) {
+    let active = false;
+    let buttonApi = null;
+
+    const setActive = (next) => {
+      active = Boolean(next);
+      const doc = PAGE.document || document;
+      const container = editor.getContainer ? editor.getContainer() : null;
+      if (!container) return;
+
+      injectFullscreenStyles();
+      container.classList.toggle('tm-salic-editor-fullscreen', active);
+      doc.documentElement.classList.toggle('tm-salic-editor-fullscreen-active', active);
+      doc.body.classList.toggle('tm-salic-editor-fullscreen-active', active);
+      if (buttonApi) buttonApi.setActive(active);
+
+      setTimeout(() => {
+        try {
+          if (typeof editor.focus === 'function') editor.focus();
+        } catch (_) {}
+      }, 0);
+    };
+
+    const onKeydown = (event) => {
+      if (active && event.key === 'Escape') setActive(false);
+    };
+
+    editor.ui.registry.addToggleButton('salicfullscreen', {
+      icon: 'fullscreen',
+      tooltip: 'Tela cheia',
+      onAction: () => setActive(!active),
+      onSetup: (api) => {
+        buttonApi = api;
+        api.setActive(active);
+        return () => {
+          buttonApi = null;
+        };
+      }
+    });
+
+    (PAGE.document || document).addEventListener('keydown', onKeydown, true);
+    editor.on('remove', () => {
+      setActive(false);
+      (PAGE.document || document).removeEventListener('keydown', onKeydown, true);
+    });
+
+    return {
+      exit: () => setActive(false)
+    };
+  }
+
+  function setupZoomButtons(editor) {
+    editor.ui.registry.addButton('saliczoomout', {
+      icon: 'zoom-out',
+      tooltip: 'Diminuir zoom',
+      onAction: () => setZoom(STATE.zoom - CONFIG.zoomStep)
+    });
+
+    editor.ui.registry.addButton('saliczoomreset', {
+      text: `${STATE.zoom}%`,
+      tooltip: 'Restaurar zoom',
+      onAction: () => setZoom(CONFIG.zoomDefault),
+      onSetup: (api) => {
+        STATE.zoomButtons.add(api);
+        try {
+          api.setText(`${STATE.zoom}%`);
+        } catch (_) {}
+        return () => {
+          STATE.zoomButtons.delete(api);
+        };
+      }
+    });
+
+    editor.ui.registry.addButton('saliczoomin', {
+      icon: 'zoom-in',
+      tooltip: 'Aumentar zoom',
+      onAction: () => setZoom(STATE.zoom + CONFIG.zoomStep)
+    });
+  }
 
   function isEnabled() {
     try {
@@ -287,14 +478,14 @@
           'undo redo | blocks fontsize | bold italic underline strikethrough',
           'forecolor backcolor | alignleft aligncenter alignright alignjustify',
           'bullist numlist outdent indent',
-          'removeformat | code fullscreen preview help'
+          'saliczoomout saliczoomreset saliczoomin',
+          'removeformat | code salicfullscreen preview help'
         ].join(' '),
         plugins: [
           'lists',
           'code',
           'autoresize',
           'wordcount',
-          'fullscreen',
           'preview',
           'charmap',
           'visualblocks',
@@ -321,8 +512,15 @@
           }
         `,
         setup(editor) {
+          setupZoomButtons(editor);
+          const fullscreen = setupFullscreenButton(editor);
+          editor.on('remove', () => {
+            fullscreen.exit();
+          });
           editor.on('init', () => {
             editor.setContent(getSourceHtml(field) || '');
+            applyZoomToEditor(editor);
+            updateZoomButtons();
             syncToSource(editor, field);
           });
           editor.on('change keyup input undo redo setcontent', () => {
@@ -459,6 +657,8 @@
     getEntry,
     dispose
   };
+
+  loadZoom();
 
   STATE.settingListener = (event) => {
     if (!event.detail || event.detail.key !== CONFIG.settingKey) return;
