@@ -3,7 +3,7 @@
 // @namespace    universal-react-select
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
-// @version      2.11
+// @version      2.12
 // @description  Converts plain HTML select dropdowns into React Select components with sync.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -260,6 +260,13 @@
   min-width: 0;
   position: relative;
 }
+.input-field > .select-wrapper.tm-reactselect-materialize-disabled + .tm-reactselect-wrapper + label {
+  position: static;
+  display: block;
+  transform: none;
+  margin-top: 0.35rem;
+  pointer-events: auto;
+}
 .tm-reactselect-wrapper::before {
   content: "";
   position: absolute;
@@ -413,7 +420,10 @@
     if (isMulti) {
       const values = new Set((selected || []).map((value) => String(value)));
       Array.from(select.options || []).forEach((opt) => {
-        opt.selected = values.has(String(opt.value));
+        const isSelected = values.has(String(opt.value));
+        opt.selected = isSelected;
+        if (isSelected) opt.setAttribute('selected', 'selected');
+        else opt.removeAttribute('selected');
       });
     } else {
       const value = selected ? String(selected) : '';
@@ -421,9 +431,51 @@
       if (!value && select.options && select.options.length) {
         select.selectedIndex = 0;
       }
+      Array.from(select.options || []).forEach((opt) => {
+        const isSelected = String(opt.value) === value && value !== '';
+        if (isSelected) opt.setAttribute('selected', 'selected');
+        else opt.removeAttribute('selected');
+      });
     }
+    syncMaterializeMirror(select);
     select.dispatchEvent(new Event('input', { bubbles: true }));
     select.dispatchEvent(new Event('change', { bubbles: true }));
+    triggerJQueryChange(select);
+  }
+
+  function triggerJQueryChange(select) {
+    try {
+      const jq = window.$3 || window.jQuery || window.$;
+      if (typeof jq === 'function') jq(select).trigger('change');
+    } catch (_) {}
+  }
+
+  function syncMaterializeMirror(select) {
+    const materializeWrapper = getMaterializeWrapper(select);
+    if (!materializeWrapper) return;
+
+    const selectedOptions = Array.from(select.options || []).filter((opt) => opt.selected && !opt.disabled);
+    const selectedValues = new Set(selectedOptions.map((opt) => String(opt.value)));
+    const optionList = Array.from(select.options || []);
+    const listItems = Array.from(materializeWrapper.querySelectorAll('ul.select-dropdown > li'));
+
+    listItems.forEach((li, index) => {
+      const option = optionList[index];
+      if (!option) return;
+      const isSelected = selectedValues.has(String(option.value));
+      const checkbox = li.querySelector('input[type="checkbox"]');
+      if (checkbox) checkbox.checked = isSelected;
+      li.classList.toggle('active', isSelected);
+      li.classList.toggle('selected', isSelected);
+    });
+
+    const input = materializeWrapper.querySelector('input.select-dropdown');
+    if (input) {
+      const placeholder = getPlaceholder(select);
+      input.value = selectedOptions.length
+        ? selectedOptions.map((opt) => opt.textContent.trim()).join(', ')
+        : placeholder;
+    }
   }
 
   function createReactSelect(select) {
@@ -461,6 +513,7 @@
     let currentFlat = currentOptions.flat;
     let currentValue = getSelectedValue(select, isMulti);
     let suppressSelectChange = false;
+    let suppressSelectMutation = false;
 
     function render() {
       const styles = {
@@ -513,9 +566,13 @@
             ? (next || []).map((opt) => String(opt.value))
             : (next ? String(next.value) : null);
           suppressSelectChange = true;
+          suppressSelectMutation = true;
           syncSelectFromReact(select, currentValue, isMulti);
           suppressSelectChange = false;
-          setTimeout(refreshFromSelect, 0);
+          setTimeout(() => {
+            suppressSelectMutation = false;
+            refreshFromSelect();
+          }, 0);
         }
       });
 
@@ -545,6 +602,7 @@
     select.addEventListener('input', selectChangeHandler);
 
     const optionObserver = new MutationObserver(() => {
+      if (suppressSelectMutation) return;
       refreshFromSelect();
     });
     optionObserver.observe(select, { childList: true, subtree: true, attributes: true });
