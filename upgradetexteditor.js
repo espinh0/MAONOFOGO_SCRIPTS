@@ -3,6 +3,7 @@
 
   const CONFIG = {
     apiName: '__tmPowerSalicUpgradeTextEditor',
+    version: '1.0.1',
     settingKey: 'tm-salic-setting-alt-editor',
     settingEventName: 'tm-salic-setting-change',
     settingOn: '1',
@@ -16,14 +17,33 @@
   };
 
   if (window[CONFIG.apiName] && window[CONFIG.apiName].version) {
-    window[CONFIG.apiName].apply();
+    try {
+      if (typeof window[CONFIG.apiName].dispose === 'function') {
+        window[CONFIG.apiName].dispose();
+      } else if (typeof window[CONFIG.apiName].apply === 'function') {
+        window[CONFIG.apiName].apply();
+      }
+    } catch (_) {}
+    if (window[CONFIG.apiName] && window[CONFIG.apiName].version === CONFIG.version) {
+      try {
+        window[CONFIG.apiName].apply();
+      } catch (_) {}
+      return;
+    }
+  }
+
+  if (window.__tmPowerSalicUpgradeTextEditorLoading) {
     return;
   }
+  window.__tmPowerSalicUpgradeTextEditorLoading = true;
 
   const STATE = {
     editors: new WeakMap(),
     quillPromise: null,
-    observerTimer: null
+    observerTimer: null,
+    observer: null,
+    applying: false,
+    pendingFields: new WeakSet()
   };
 
   function isEnabled() {
@@ -289,7 +309,14 @@
     if (!root) return;
 
     if (!window.Quill) {
-      loadQuill().then(() => createEditor(field)).catch(() => {});
+      if (STATE.pendingFields.has(field)) return;
+      STATE.pendingFields.add(field);
+      loadQuill().then(() => {
+        STATE.pendingFields.delete(field);
+        createEditor(field);
+      }).catch(() => {
+        STATE.pendingFields.delete(field);
+      });
       return;
     }
 
@@ -377,12 +404,18 @@
   }
 
   function apply() {
+    if (STATE.applying) return;
+    STATE.applying = true;
     const fields = Array.from(document.querySelectorAll('textarea'));
-    fields.forEach((field) => {
-      if (!isEligibleField(field)) return;
-      if (isEnabled()) createEditor(field);
-      else removeEditor(field);
-    });
+    try {
+      fields.forEach((field) => {
+        if (!isEligibleField(field)) return;
+        if (isEnabled()) createEditor(field);
+        else removeEditor(field);
+      });
+    } finally {
+      STATE.applying = false;
+    }
   }
 
   function scheduleApply() {
@@ -394,10 +427,20 @@
   }
 
   window[CONFIG.apiName] = {
-    version: '1.0.0',
+    version: CONFIG.version,
     apply,
     getEntry(field) {
       return STATE.editors.get(field) || null;
+    },
+    dispose() {
+      if (STATE.observer) {
+        STATE.observer.disconnect();
+        STATE.observer = null;
+      }
+      if (STATE.observerTimer) {
+        clearTimeout(STATE.observerTimer);
+        STATE.observerTimer = null;
+      }
     }
   };
 
@@ -406,8 +449,21 @@
     apply();
   });
 
-  const observer = new MutationObserver(scheduleApply);
-  observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+  STATE.observer = new MutationObserver((mutations) => {
+    const ownMutation = mutations.every((mutation) => {
+      const nodes = [mutation.target].concat(Array.from(mutation.addedNodes || []));
+      return nodes.every((node) => {
+        if (!node || node.nodeType !== 1) return true;
+        if (node.id === CONFIG.styleId || node.id === CONFIG.quillCssId || node.id === CONFIG.quillJsId) return true;
+        if (node.classList && (node.classList.contains('tm-salic-alt-editor') || node.classList.contains('tm-salic-legacy-editor-hidden'))) return true;
+        return Boolean(node.closest && node.closest('.tm-salic-alt-editor'));
+      });
+    });
+    if (ownMutation) return;
+    scheduleApply();
+  });
+  STATE.observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
 
   apply();
+  window.__tmPowerSalicUpgradeTextEditorLoading = false;
 })();

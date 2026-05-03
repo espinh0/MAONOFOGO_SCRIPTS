@@ -3209,11 +3209,20 @@
     const nodes = [mutation.target].concat(Array.from(mutation.addedNodes || []));
     return nodes.every((node) => {
       if (!node || node.nodeType !== 1) return true;
-      if (node.id === CONFIG.settingsRootId || node.id === CONFIG.settingsMenuId || node.id === CONFIG.customStyleId) return true;
+      if (
+        node.id === CONFIG.settingsRootId
+        || node.id === CONFIG.settingsMenuId
+        || node.id === CONFIG.customStyleId
+        || node.id === 'tm-salic-upgrade-text-editor-css'
+        || node.id === 'tm-salic-quill-css'
+        || node.id === 'tm-salic-quill-js'
+      ) return true;
       if (node.classList && node.classList.contains(CONFIG.statusClass)) return true;
       if (node.classList && node.classList.contains('tm-salic-file-dropzone')) return true;
+      if (node.classList && node.classList.contains('tm-salic-alt-editor')) return true;
+      if (node.classList && node.classList.contains('tm-salic-legacy-editor-hidden')) return true;
       if (node.closest) {
-        return Boolean(node.closest(`#${CONFIG.settingsRootId}, #${CONFIG.settingsMenuId}, .${CONFIG.statusClass}, .tm-salic-file-dropzone`));
+        return Boolean(node.closest(`#${CONFIG.settingsRootId}, #${CONFIG.settingsMenuId}, .${CONFIG.statusClass}, .tm-salic-file-dropzone, .tm-salic-alt-editor`));
       }
       return false;
     });
