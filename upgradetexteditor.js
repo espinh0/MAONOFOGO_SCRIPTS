@@ -1,220 +1,413 @@
-// ==UserScript==
-// @name         SALIC - TinyMCE 8 overlay (layout otimizado)
-// @namespace    salic-tinymce8-overlay-clean
-// @version      3.3
-// @match        https://salic.cultura.gov.br/*
-// @run-at       document-idle
-// @grant        none
-// ==/UserScript==
-
 (function () {
   'use strict';
 
-  const VERSION = '8.5.0';
-  const BASE = `https://cdn.jsdelivr.net/npm/tinymce@${VERSION}`;
-  const SRC = `${BASE}/tinymce.min.js`;
+  const CONFIG = {
+    apiName: '__tmPowerSalicUpgradeTextEditor',
+    settingKey: 'tm-salic-setting-alt-editor',
+    settingEventName: 'tm-salic-setting-change',
+    settingOn: '1',
+    ignoreSelector: '.tm-localmem-ignore, [data-tm-localmem="off"]',
+    reactSelectIgnoreSelector: '.tm-reactselect-wrapper, [data-tm-reactselect-host="1"]',
+    styleId: 'tm-salic-upgrade-text-editor-css',
+    quillCssId: 'tm-salic-quill-css',
+    quillJsId: 'tm-salic-quill-js',
+    quillCssUrl: 'https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css',
+    quillJsUrl: 'https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js'
+  };
 
-  const TEXTAREA_SELECTOR = 'textarea[name], textarea#resumodoprojeto';
-
-  function decodeHtml(value) {
-    const el = document.createElement('textarea');
-    el.innerHTML = value || '';
-    return el.value;
+  if (window[CONFIG.apiName] && window[CONFIG.apiName].version) {
+    window[CONFIG.apiName].apply();
+    return;
   }
 
-  function loadTiny8() {
-    return new Promise((resolve, reject) => {
-      if (window.__tinymce8Loaded && window.tinymce?.majorVersion === '8') {
-        resolve();
+  const STATE = {
+    editors: new WeakMap(),
+    quillPromise: null,
+    observerTimer: null
+  };
+
+  function isEnabled() {
+    try {
+      if (typeof GM_getValue === 'function') {
+        const stored = GM_getValue(CONFIG.settingKey, null);
+        if (stored !== null && stored !== undefined) return stored === CONFIG.settingOn || stored === true;
+      }
+    } catch (_) {}
+    try {
+      return localStorage.getItem(CONFIG.settingKey) === CONFIG.settingOn;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function getTinyMceEditor(field) {
+    const tinymceGlobal = window.tinymce || window.tinyMCE;
+    if (!tinymceGlobal || !field || !field.id) return null;
+    try {
+      return tinymceGlobal.get(field.id) || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function getEditorIframe(field) {
+    if (!field || field.tagName.toLowerCase() !== 'textarea') return null;
+    if (!field.id) return null;
+    return document.getElementById(`${field.id}_ifr`);
+  }
+
+  function getLegacyEditorToolbarRoot(iframe) {
+    if (!iframe) return null;
+    let node = iframe.parentElement;
+    while (node && node !== document.body && node !== document.documentElement) {
+      const hasToolbar = Boolean(node.querySelector(
+        '.mce-toolbar, .mce-toolbar-grp, .mce-menubar, .tox-toolbar, .tox-toolbar__primary, .tox-editor-header, [role="toolbar"]'
+      ));
+      if (hasToolbar && node.contains(iframe)) return node;
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function getEditorRoot(field) {
+    if (!field || field.tagName.toLowerCase() !== 'textarea') return null;
+    const iframe = getEditorIframe(field);
+    if (field.id) {
+      const knownRoot = document.getElementById(`${field.id}_tbl`)
+        || document.getElementById(`${field.id}_parent`)
+        || document.getElementById(`${field.id}_container`);
+      if (knownRoot) return knownRoot;
+    }
+    const toolbarRoot = getLegacyEditorToolbarRoot(iframe);
+    if (toolbarRoot) return toolbarRoot;
+    const editor = getTinyMceEditor(field);
+    if (editor && typeof editor.getContainer === 'function') {
+      try {
+        const container = editor.getContainer();
+        if (container) return container;
+      } catch (_) {}
+    }
+    if (!iframe) return null;
+    return iframe.closest('.tox-tinymce')
+      || iframe.closest('.mce-tinymce')
+      || iframe.closest('.mceEditor')
+      || iframe.closest('table.mceLayout')
+      || iframe.closest('.mce-container')
+      || iframe.closest('.mce-panel')
+      || iframe.parentElement;
+  }
+
+  function getFieldValue(field) {
+    const iframe = getEditorIframe(field);
+    if (iframe && iframe.contentDocument && iframe.contentDocument.body) {
+      return iframe.contentDocument.body.innerHTML || '';
+    }
+    return field.value || '';
+  }
+
+  function updateHiddenTextarea(field, value) {
+    if (!field || field.tagName.toLowerCase() !== 'textarea') return;
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+    if (setter) setter.call(field, value);
+    else field.value = value;
+  }
+
+  function setLegacyEditorContent(field, value) {
+    const nextValue = value === null || value === undefined ? '' : String(value);
+    const editor = getTinyMceEditor(field);
+    if (editor && typeof editor.setContent === 'function') {
+      try {
+        editor.setContent(nextValue);
+      } catch (_) {}
+    }
+    const iframe = getEditorIframe(field);
+    if (iframe && iframe.contentDocument && iframe.contentDocument.body) {
+      try {
+        iframe.contentDocument.body.innerHTML = nextValue;
+      } catch (_) {}
+    }
+    updateHiddenTextarea(field, nextValue);
+  }
+
+  function dispatchFieldChange(field) {
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function isEligibleField(field) {
+    if (!field) return false;
+    const tag = field.tagName ? field.tagName.toLowerCase() : '';
+    if (tag !== 'textarea') return false;
+    if (field.matches(CONFIG.ignoreSelector)) return false;
+    if (field.closest && field.closest(CONFIG.ignoreSelector)) return false;
+    if (field.closest && field.closest(CONFIG.reactSelectIgnoreSelector)) return false;
+    if (field.id && /^react-select-\d+-input$/i.test(field.id)) return false;
+    if (field.getAttribute('role') === 'combobox') return false;
+    if (field.getAttribute('aria-haspopup')) return false;
+    if (field.getAttribute('aria-autocomplete')) return false;
+    if (field.hasAttribute('aria-expanded')) return false;
+    if (field.closest && field.closest('[role="combobox"], [role="listbox"], [aria-haspopup], [aria-expanded]')) return false;
+    if (field.closest && field.closest('.select2, .select2-container, .chosen-container, .dropdown, .autocomplete')) return false;
+    if (field.getAttribute('data-tm-localmem') === 'off') return false;
+    return true;
+  }
+
+  function injectStyles() {
+    if (!document.head || document.getElementById(CONFIG.styleId)) return;
+    const style = document.createElement('style');
+    style.id = CONFIG.styleId;
+    style.textContent = `
+    .tm-salic-alt-editor {
+      border: 1px solid #cbd5e1;
+      border-radius: .5rem;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, .08);
+    }
+    .tm-salic-legacy-editor-hidden {
+      display: none !important;
+    }
+    .tm-salic-alt-editor .ql-toolbar.ql-snow {
+      border: 0;
+      border-bottom: 1px solid #e2e8f0;
+      background: #f8fafc;
+    }
+    .tm-salic-alt-editor .ql-container.ql-snow {
+      border: 0;
+      font: 400 .9rem/1.5 Arial, sans-serif;
+      color: #111827;
+    }
+    .tm-salic-alt-editor .ql-editor {
+      min-height: 260px;
+      font: 400 16px/1.5 Arial, sans-serif;
+      color: #111827;
+      background: #fff;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .tm-salic-alt-editor .ql-editor p,
+    .tm-salic-alt-editor .ql-editor ol,
+    .tm-salic-alt-editor .ql-editor ul {
+      margin: 0 0 .5em;
+    }
+    .tm-salic-alt-editor .ql-editor .ql-size-small {
+      font-size: .75em;
+    }
+    .tm-salic-alt-editor .ql-editor .ql-size-large {
+      font-size: 1.5em;
+    }
+    .tm-salic-alt-editor .ql-editor .ql-size-huge {
+      font-size: 2.5em;
+    }
+    .tm-salic-alt-editor .ql-toolbar select,
+    .tm-salic-alt-editor .ql-toolbar .ql-picker {
+      max-width: none;
+    }
+    .tm-salic-alt-editor .ql-toolbar .ql-size {
+      width: 5.5rem;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="12px"]::before,
+    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="12px"]::before {
+      content: "12px";
+      font-size: 12px;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="14px"]::before,
+    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="14px"]::before {
+      content: "14px";
+      font-size: 14px;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="16px"]::before,
+    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="16px"]::before {
+      content: "16px";
+      font-size: 16px;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="18px"]::before,
+    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="18px"]::before {
+      content: "18px";
+      font-size: 18px;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="24px"]::before,
+    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="24px"]::before {
+      content: "24px";
+      font-size: 24px;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="32px"]::before,
+    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="32px"]::before {
+      content: "32px";
+      font-size: 32px;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-label::before {
+      line-height: 1;
+      vertical-align: middle;
+    }
+    .tm-salic-alt-editor .ql-size .ql-picker-options {
+      min-width: 6rem;
+    }`;
+    document.head.appendChild(style);
+  }
+
+  function loadQuill() {
+    if (window.Quill) return Promise.resolve(window.Quill);
+    if (STATE.quillPromise) return STATE.quillPromise;
+    STATE.quillPromise = new Promise((resolve, reject) => {
+      if (!document.getElementById(CONFIG.quillCssId)) {
+        const link = document.createElement('link');
+        link.id = CONFIG.quillCssId;
+        link.rel = 'stylesheet';
+        link.href = CONFIG.quillCssUrl;
+        document.head.appendChild(link);
+      }
+      const existingScript = document.getElementById(CONFIG.quillJsId);
+      if (existingScript) {
+        if (window.Quill) resolve(window.Quill);
+        else existingScript.addEventListener('load', () => resolve(window.Quill));
         return;
       }
-
-      const oldTiny = window.tinymce || window.tinyMCE || null;
-
-      const s = document.createElement('script');
-      s.src = SRC;
-      s.onload = () => {
-        window.__tinymce8Loaded = true;
-        window.__salicOldTinyMCE = oldTiny;
-        resolve();
-      };
-      s.onerror = reject;
-      document.head.appendChild(s);
+      const script = document.createElement('script');
+      script.id = CONFIG.quillJsId;
+      script.src = CONFIG.quillJsUrl;
+      script.onload = () => resolve(window.Quill);
+      script.onerror = () => reject(new Error('Failed to load Quill'));
+      document.head.appendChild(script);
     });
+    return STATE.quillPromise;
   }
 
-  function findOldEditorContainer(textarea) {
-    if (!textarea.id) return null;
-    const iframe = document.getElementById(textarea.id + '_ifr');
-    return iframe?.closest('.mce-tinymce') || null;
-  }
-
-  function prepareTextarea(textarea) {
-    textarea.style.display = 'block';
-    textarea.style.visibility = 'hidden';
-    textarea.style.position = 'absolute';
-    textarea.style.left = '-99999px';
-  }
-
-  function createMirrorTextarea(source) {
-    const mirror = document.createElement('textarea');
-
-    mirror.id = `${source.id || source.name}_tinymce8_overlay`;
-    mirror.value = decodeHtml(source.value);
-    mirror.style.width = '100%';
-    mirror.style.minHeight = '320px';
-
-    const oldContainer = findOldEditorContainer(source);
-
-    if (oldContainer) {
-      oldContainer.style.display = 'none';
-      oldContainer.insertAdjacentElement('afterend', mirror);
-    } else {
-      source.insertAdjacentElement('afterend', mirror);
-    }
-
-    return mirror;
-  }
-
-  function syncToSource(editor, source) {
-    const html = editor.getContent();
-
-    source.value = html;
-    source.setAttribute('value', html);
-
-    source.dispatchEvent(new Event('input', { bubbles: true }));
-    source.dispatchEvent(new Event('change', { bubbles: true }));
-
-    if (window.jQuery) {
-      window.jQuery(source).val(html).trigger('input').trigger('change');
-    }
-
-    const oldTiny = window.__salicOldTinyMCE;
-
+  function registerQuillFormats() {
+    if (!window.Quill) return;
     try {
-      const oldEditor =
-        oldTiny?.get?.(source.id) ||
-        oldTiny?.EditorManager?.get?.(source.id);
-
-      if (oldEditor) {
-        oldEditor.setContent(html);
-        oldEditor.save();
-      }
-    } catch (e) {}
+      const SizeStyle = window.Quill.import('attributors/style/size');
+      SizeStyle.whitelist = ['10px', '12px', '14px', '16px', '18px', '24px', '32px', '8pt', '10pt', '12pt', '14pt', '18pt', '24pt', '36pt'];
+      window.Quill.register(SizeStyle, true);
+    } catch (_) {}
   }
 
-  async function initTextarea(source) {
-    if (source.dataset.tiny8) return;
-    source.dataset.tiny8 = '1';
+  function createEditor(field) {
+    if (!field || STATE.editors.get(field)) return;
+    if (!isEnabled()) return;
+    const root = getEditorRoot(field);
+    if (!root) return;
 
-    prepareTextarea(source);
-    const mirror = createMirrorTextarea(source);
+    if (!window.Quill) {
+      loadQuill().then(() => createEditor(field)).catch(() => {});
+      return;
+    }
 
-    await tinymce.init({
-      target: mirror,
+    registerQuillFormats();
+    injectStyles();
 
-      license_key: 'gpl',
-      base_url: BASE,
-      suffix: '.min',
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tm-salic-alt-editor';
+    wrapper.dataset.tmAltEditor = '1';
+    wrapper.dataset.tmReactselect = 'off';
 
-      height: 420,
+    const editorHost = document.createElement('div');
+    editorHost.className = 'tm-salic-alt-body';
+    editorHost.dataset.tmReactselect = 'off';
+    wrapper.appendChild(editorHost);
 
-      menubar: 'edit view format tools help',
-      toolbar: [
-        'undo redo | blocks fontsize | bold italic underline strikethrough',
-        'forecolor backcolor | alignleft aligncenter alignright alignjustify',
-        'bullist numlist outdent indent',
-        'removeformat | code fullscreen preview help'
-      ].join(' '),
-
-      plugins: [
-        'lists',
-        'code',
-        'autoresize',
-        'wordcount',
-        'fullscreen',
-        'preview',
-        'charmap',
-        'visualblocks',
-        'searchreplace',
-        'help'
-      ].join(' '),
-
-      // remove suporte a link e table
-      contextmenu: false,
-
-      fontsize_formats: '12px 14px 16px 18px 20px 24px 32px',
-
-      paste_as_text: false,
-      paste_webkit_styles: 'all',
-
-      valid_elements: '*[*]',
-      verify_html: false,
-
-      content_style: `
-        body {
-          max-width: 1200px;
-          margin: 32px auto;
-          padding: 0 24px;
-          font-family: Arial, sans-serif;
-          font-size: 14px;
-          line-height: 1.6;
-        }
-
-        p {
-          margin-bottom: 0.8em;
-        }
-      `,
-
-      setup(editor) {
-        editor.on('init', () => {
-          editor.setContent(decodeHtml(source.value) || '');
-          syncToSource(editor, source);
-        });
-
-        editor.on('change keyup input undo redo', () => {
-          syncToSource(editor, source);
-        });
+    const quill = new window.Quill(editorHost, {
+      theme: 'snow',
+      modules: {
+        toolbar: [
+          ['bold', 'italic', 'underline'],
+          [{ color: [] }, { background: [] }],
+          [{ size: ['12px', '14px', '16px', '18px', '24px', '32px'] }],
+          [{ list: 'ordered' }, { list: 'bullet' }],
+          ['link'],
+          ['clean']
+        ]
       }
+    });
+
+    const toolbar = wrapper.querySelector('.ql-toolbar');
+    if (toolbar) {
+      toolbar.dataset.tmReactselect = 'off';
+      toolbar.classList.add('tm-reactselect-ignore');
+      toolbar.querySelectorAll('select').forEach((select) => {
+        select.dataset.tmReactselect = 'off';
+        select.classList.add('tm-reactselect-ignore');
+      });
+    }
+
+    const initialHtml = getFieldValue(field);
+    if (initialHtml) quill.clipboard.dangerouslyPasteHTML(initialHtml, 'silent');
+
+    const onTextChange = () => {
+      const value = quill.root.innerHTML || '';
+      updateHiddenTextarea(field, value);
+      dispatchFieldChange(field);
+    };
+    quill.on('text-change', onTextChange);
+
+    const previousDisplay = root.style.display || '';
+    const previousAriaHidden = root.getAttribute('aria-hidden');
+    root.classList.add('tm-salic-legacy-editor-hidden');
+    root.style.setProperty('display', 'none', 'important');
+    root.setAttribute('aria-hidden', 'true');
+    root.insertAdjacentElement('afterend', wrapper);
+
+    STATE.editors.set(field, {
+      wrapper,
+      body: quill.root,
+      root,
+      quill,
+      previousDisplay,
+      previousAriaHidden
     });
   }
 
-  async function boot() {
-    await loadTiny8();
-
-    const areas = document.querySelectorAll(TEXTAREA_SELECTOR);
-
-    for (const ta of areas) {
-      try {
-        await initTextarea(ta);
-      } catch (e) {
-        console.error('Erro TinyMCE:', e);
-        ta.style.visibility = 'visible';
+  function removeEditor(field) {
+    const entry = STATE.editors.get(field);
+    if (!entry) return;
+    const value = entry.body ? entry.body.innerHTML || '' : getFieldValue(field);
+    setLegacyEditorContent(field, value);
+    if (entry.root) {
+      entry.root.classList.remove('tm-salic-legacy-editor-hidden');
+      entry.root.style.display = entry.previousDisplay || '';
+      if (entry.previousAriaHidden === null || entry.previousAriaHidden === undefined) {
+        entry.root.removeAttribute('aria-hidden');
+      } else {
+        entry.root.setAttribute('aria-hidden', entry.previousAriaHidden);
       }
     }
+    if (entry.wrapper) entry.wrapper.remove();
+    STATE.editors.delete(field);
+    dispatchFieldChange(field);
   }
 
-  function syncAll() {
-    document.querySelectorAll('textarea[data-tiny8="1"]').forEach(source => {
-      const id = `${source.id || source.name}_tinymce8_overlay`;
-      const ed = tinymce.get(id);
-      if (ed) syncToSource(ed, source);
+  function apply() {
+    const fields = Array.from(document.querySelectorAll('textarea'));
+    fields.forEach((field) => {
+      if (!isEligibleField(field)) return;
+      if (isEnabled()) createEditor(field);
+      else removeEditor(field);
     });
   }
 
-  document.addEventListener('submit', syncAll, true);
+  function scheduleApply() {
+    if (STATE.observerTimer) clearTimeout(STATE.observerTimer);
+    STATE.observerTimer = setTimeout(() => {
+      STATE.observerTimer = null;
+      apply();
+    }, 200);
+  }
 
-  document.addEventListener('click', e => {
-    const el = e.target.closest('button, input, a');
-    if (!el) return;
-
-    const txt = (el.innerText || el.value || '').toLowerCase();
-
-    if (txt.includes('salvar') || txt.includes('enviar')) {
-      syncAll();
+  window[CONFIG.apiName] = {
+    version: '1.0.0',
+    apply,
+    getEntry(field) {
+      return STATE.editors.get(field) || null;
     }
-  }, true);
+  };
 
-  setTimeout(boot, 1200);
+  window.addEventListener(CONFIG.settingEventName, (event) => {
+    if (!event.detail || event.detail.key !== CONFIG.settingKey) return;
+    apply();
+  });
 
+  const observer = new MutationObserver(scheduleApply);
+  observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+
+  apply();
 })();

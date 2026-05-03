@@ -3,7 +3,7 @@
 // @namespace    universal-react-select
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
-// @version      2.10
+// @version      2.11
 // @description  Converts plain HTML select dropdowns into React Select components with sync.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -618,7 +618,7 @@
       return;
     }
     Array.from(STATE.instanceBySelect.entries()).forEach(([select, instance]) => {
-      if (getSelectableOptionCount(select) < getMinOptionsThreshold()) {
+      if (!select.multiple && getSelectableOptionCount(select) < getMinOptionsThreshold()) {
         destroyInstance(select, instance);
       }
     });
