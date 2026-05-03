@@ -3,7 +3,7 @@
 // @namespace    universal-react-select
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
-// @version      2.12
+// @version      2.14
 // @description  Converts plain HTML select dropdowns into React Select components with sync.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -76,11 +76,15 @@
       if (stored === CONFIG.settingOn) return true;
       if (stored === CONFIG.settingOff) return false;
     } catch (_) {}
-    return true;
+    return false;
   }
 
-  function applyOriginalSelectVisibility(select, previousTabIndex) {
-    if (shouldShowOriginalSelect()) {
+  function applyOriginalSelectVisibility(select, previousTabIndex, materializeWrapper) {
+    const showOriginal = shouldShowOriginalSelect();
+    if (materializeWrapper) {
+      materializeWrapper.classList.toggle('tm-reactselect-original-hidden', !showOriginal);
+    }
+    if (showOriginal) {
       select.classList.remove(CONFIG.hiddenClass);
       if (previousTabIndex === null || previousTabIndex === undefined) {
         select.removeAttribute('tabindex');
@@ -95,7 +99,7 @@
 
   function applyOriginalVisibilityToInstances() {
     Array.from(STATE.instanceBySelect.entries()).forEach(([select, instance]) => {
-      applyOriginalSelectVisibility(select, instance.previousTabIndex);
+      applyOriginalSelectVisibility(select, instance.previousTabIndex, instance.materializeWrapper);
     });
   }
 
@@ -239,7 +243,7 @@
   overflow: hidden !important;
   white-space: nowrap !important;
 }
-.tm-reactselect-materialize-disabled > select {
+.tm-reactselect-materialize-disabled.tm-reactselect-original-hidden > select {
   position: absolute !important;
   opacity: 0 !important;
   pointer-events: none !important;
@@ -267,21 +271,9 @@
   margin-top: 0.35rem;
   pointer-events: auto;
 }
-.tm-reactselect-wrapper::before {
-  content: "";
-  position: absolute;
-  top: 5px;
-  bottom: 5px;
-  left: 0;
-  width: 3px;
-  border-radius: 3px;
-  background: #000000;
-  z-index: 1;
-  pointer-events: none;
-}
-.tm-reactselect-materialize-disabled > input.select-dropdown,
-.tm-reactselect-materialize-disabled > .caret,
-.tm-reactselect-materialize-disabled > ul.select-dropdown {
+.tm-reactselect-materialize-disabled.tm-reactselect-original-hidden > input.select-dropdown,
+.tm-reactselect-materialize-disabled.tm-reactselect-original-hidden > .caret,
+.tm-reactselect-materialize-disabled.tm-reactselect-original-hidden > ul.select-dropdown {
   display: none !important;
   pointer-events: none !important;
 }
@@ -416,14 +408,18 @@
     return isMulti ? selectedValues.map((val) => String(val)) : (selectedValues.length ? String(selectedValues[0]) : null);
   }
 
-  function syncSelectFromReact(select, selected, isMulti) {
+  function syncSelectFromReact(select, selected, isMulti, notify = true) {
     if (isMulti) {
       const values = new Set((selected || []).map((value) => String(value)));
       Array.from(select.options || []).forEach((opt) => {
         const isSelected = values.has(String(opt.value));
         opt.selected = isSelected;
-        if (isSelected) opt.setAttribute('selected', 'selected');
-        else opt.removeAttribute('selected');
+        opt.defaultSelected = isSelected;
+        if (isSelected) {
+          opt.setAttribute('selected', 'selected');
+        } else {
+          opt.removeAttribute('selected');
+        }
       });
     } else {
       const value = selected ? String(selected) : '';
@@ -433,14 +429,18 @@
       }
       Array.from(select.options || []).forEach((opt) => {
         const isSelected = String(opt.value) === value && value !== '';
+        opt.selected = isSelected;
+        opt.defaultSelected = isSelected;
         if (isSelected) opt.setAttribute('selected', 'selected');
         else opt.removeAttribute('selected');
       });
     }
     syncMaterializeMirror(select);
+    if (!notify) return;
     select.dispatchEvent(new Event('input', { bubbles: true }));
     select.dispatchEvent(new Event('change', { bubbles: true }));
     triggerJQueryChange(select);
+    syncMaterializeMirror(select);
   }
 
   function triggerJQueryChange(select) {
@@ -501,7 +501,7 @@
     wrapper.style.maxWidth = '100%';
     wrapper.style.minWidth = '0';
 
-    applyOriginalSelectVisibility(select, previousTabIndex);
+    applyOriginalSelectVisibility(select, previousTabIndex, materializeWrapper);
 
     const SelectComponent = STATE.reactSelect;
     const React = STATE.react;
@@ -570,6 +570,8 @@
           syncSelectFromReact(select, currentValue, isMulti);
           suppressSelectChange = false;
           setTimeout(() => {
+            syncSelectFromReact(select, currentValue, isMulti, false);
+            syncMaterializeMirror(select);
             suppressSelectMutation = false;
             refreshFromSelect();
           }, 0);
@@ -645,6 +647,7 @@
       }
       if (instance.materializeWrapper) {
         instance.materializeWrapper.classList.remove('tm-reactselect-materialize-disabled');
+        instance.materializeWrapper.classList.remove('tm-reactselect-original-hidden');
         delete instance.materializeWrapper.dataset.tmReactselectMaterializeDisabled;
       }
       select.classList.remove(CONFIG.hiddenClass);
