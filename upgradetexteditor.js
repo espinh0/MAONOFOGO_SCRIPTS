@@ -3,13 +3,14 @@
 
   const CONFIG = {
     apiName: '__tmPowerSalicUpgradeTextEditor',
-    version: '2.0.0',
+    version: '2.0.1',
     settingKey: 'tm-salic-setting-alt-editor',
     settingEventName: 'tm-salic-setting-change',
     settingOn: '1',
     tinymceVersion: '8.5.0',
     textareaSelector: 'textarea[name], textarea#resumodoprojeto',
-    initDelayMs: 80
+    initDelayMs: 80,
+    initGapMs: 120
   };
 
   const BASE = `https://cdn.jsdelivr.net/npm/tinymce@${CONFIG.tinymceVersion}`;
@@ -33,6 +34,9 @@
     tinyPromise: null,
     oldTinyMce: window.tinymce || window.tinyMCE || null,
     initTimer: null,
+    queue: [],
+    queuedFields: new Set(),
+    processingQueue: false,
     applying: false,
     settingListener: null
   };
@@ -313,6 +317,35 @@
     }
   }
 
+  function enqueueField(field) {
+    if (!field || STATE.entries.has(field) || STATE.queuedFields.has(field)) return;
+    STATE.queuedFields.add(field);
+    STATE.queue.push(field);
+  }
+
+  function clearQueue() {
+    STATE.queue = [];
+    STATE.queuedFields.clear();
+    STATE.processingQueue = false;
+  }
+
+  async function processQueue() {
+    if (STATE.processingQueue) return;
+    STATE.processingQueue = true;
+    try {
+      while (isEnabled() && STATE.queue.length) {
+        const field = STATE.queue.shift();
+        STATE.queuedFields.delete(field);
+        if (field && field.isConnected && isEligibleField(field)) {
+          await createEditor(field);
+          await new Promise((resolve) => setTimeout(resolve, CONFIG.initGapMs));
+        }
+      }
+    } finally {
+      STATE.processingQueue = false;
+    }
+  }
+
   function removeEditor(field) {
     const entry = STATE.entries.get(field);
     if (!entry) return;
@@ -344,12 +377,14 @@
     STATE.applying = true;
     try {
       if (!isEnabled()) {
+        clearQueue();
         Array.from(STATE.fields).forEach((field) => removeEditor(field));
         return;
       }
       Array.from(document.querySelectorAll(CONFIG.textareaSelector)).forEach((field) => {
-        if (isEligibleField(field)) createEditor(field);
+        if (isEligibleField(field)) enqueueField(field);
       });
+      processQueue();
     } finally {
       STATE.applying = false;
     }
@@ -373,6 +408,7 @@
       window.removeEventListener(CONFIG.settingEventName, STATE.settingListener);
       STATE.settingListener = null;
     }
+    clearQueue();
     Array.from(STATE.fields).forEach((field) => removeEditor(field));
   }
 

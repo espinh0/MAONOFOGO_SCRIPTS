@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
 // @require      https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/upgradetexteditor.js
-// @version      3.19
+// @version      3.20
 // @description  Salvamento local automatico de campos de texto e ocultacao do botao excluir proposta.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -1021,13 +1021,6 @@
         } catch (_) {
           altEntry.body.innerHTML = nextValue;
         }
-      } else if (altEntry.quill) {
-        try {
-          altEntry.quill.setText('', 'silent');
-          if (nextValue) altEntry.quill.clipboard.dangerouslyPasteHTML(0, nextValue, 'silent');
-        } catch (_) {
-          altEntry.body.innerHTML = nextValue;
-        }
       } else {
         altEntry.body.innerHTML = nextValue;
       }
@@ -1260,16 +1253,6 @@
         if (typeof altEntry.editor.focus === 'function') altEntry.editor.focus();
         altEntry.editor.insertContent(html);
         if (typeof altEntry.editor.save === 'function') altEntry.editor.save();
-        return true;
-      } catch (_) {}
-    }
-    if (altEntry && altEntry.quill) {
-      try {
-        const quill = altEntry.quill;
-        const range = quill.getSelection(true);
-        const index = range ? range.index : quill.getLength();
-        quill.clipboard.dangerouslyPasteHTML(index, html, 'user');
-        quill.setSelection(index + 1, 0, 'silent');
         return true;
       } catch (_) {}
     }
@@ -3402,8 +3385,6 @@
         || node.id === CONFIG.settingsMenuId
         || node.id === CONFIG.customStyleId
         || node.id === 'tm-salic-upgrade-text-editor-css'
-        || node.id === 'tm-salic-quill-css'
-        || node.id === 'tm-salic-quill-js'
       ) return true;
       if (node.classList && node.classList.contains(CONFIG.statusClass)) return true;
       if (node.classList && node.classList.contains('tm-salic-file-dropzone')) return true;
