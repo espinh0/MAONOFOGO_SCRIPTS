@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
 // @require      https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/upgradetexteditor.js
-// @version      3.17
+// @version      3.18
 // @description  Salvamento local automatico de campos de texto e ocultacao do botao excluir proposta.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -370,6 +370,13 @@
       height: 100%;
       align-items: stretch;
     }
+    #${CONFIG.settingsRootId}.tm-salic-settings-floating {
+      position: fixed;
+      right: 1rem;
+      bottom: 1rem;
+      z-index: 2147483646;
+      margin: 0;
+    }
     #${CONFIG.settingsButtonId} {
       display: inline-flex;
       align-items: center;
@@ -396,6 +403,11 @@
       background: rgba(255, 255, 255, .12);
       filter: none;
       outline: none;
+    }
+    #${CONFIG.settingsRootId}.tm-salic-settings-floating #${CONFIG.settingsButtonId} {
+      border-radius: 999px;
+      padding: .65rem .9rem;
+      box-shadow: 0 12px 30px rgba(15, 23, 42, .25);
     }
     #${CONFIG.settingsMenuId} {
       position: fixed;
@@ -767,9 +779,16 @@
     }
 
     @media (max-width: 576px) {
-      #${CONFIG.settingsRootId},
       #${CONFIG.settingsButtonId} {
         width: 100%;
+      }
+      #${CONFIG.settingsRootId}.tm-salic-settings-floating {
+        right: .75rem;
+        bottom: .75rem;
+        width: auto;
+      }
+      #${CONFIG.settingsRootId}.tm-salic-settings-floating #${CONFIG.settingsButtonId} {
+        width: auto;
       }
       .tm-salic-settings-row {
         grid-template-columns: minmax(0, 1fr) auto;
@@ -2185,43 +2204,77 @@
     if (button) button.setAttribute('aria-expanded', 'false');
   }
 
+  function findById(id) {
+    return Array.from(document.querySelectorAll(`[id="${id}"]`));
+  }
+
+  function removeSettingsDuplicates() {
+    const roots = findById(CONFIG.settingsRootId);
+    const menus = findById(CONFIG.settingsMenuId);
+    const buttons = findById(CONFIG.settingsButtonId);
+    const hosts = findById(CONFIG.settingsHostId);
+
+    if (roots.length > 1 || menus.length > 1 || buttons.length > 1 || hosts.length > 1) {
+      roots.forEach((root) => root.remove());
+      menus.forEach((menu) => menu.remove());
+      hosts.forEach((host) => {
+        if (!host.querySelector(`#${CONFIG.settingsRootId}`)) host.remove();
+      });
+      return { root: null, menu: null };
+    }
+
+    const root = roots[0] || null;
+    const menu = menus[0] || null;
+
+    buttons.forEach((button) => {
+      if (!root || !root.contains(button)) button.remove();
+    });
+    const button = root ? root.querySelector(`[id="${CONFIG.settingsButtonId}"]`) : null;
+
+    const rootHost = root ? root.closest(`#${CONFIG.settingsHostId}`) : null;
+    const keepHost = rootHost || hosts[0] || null;
+    hosts.forEach((host) => {
+      if (host !== keepHost) host.remove();
+    });
+
+    return { root, menu, button };
+  }
+
   function placeSettingsRoot(root) {
     const shortcutsList = document.querySelector('#atalhos > ul');
-    if (shortcutsList) {
-      let host = document.getElementById(CONFIG.settingsHostId);
-      if (!host) {
-        host = document.createElement('li');
-        host.id = CONFIG.settingsHostId;
-        host.className = 'tm-salic-settings-host';
-      }
-      const sessionItem = document.querySelector('#cronometro-sessao')?.closest('li');
-      if (sessionItem && sessionItem.parentElement === shortcutsList) {
-        shortcutsList.insertBefore(host, sessionItem);
-      } else if (!host.parentElement) {
-        shortcutsList.appendChild(host);
-      }
-      host.appendChild(root);
-      return;
+    root.classList.remove('tm-salic-settings-floating');
+    root.dataset.tmSalicSettingsPlacement = 'inline';
+    if (!shortcutsList) {
+      root.classList.add('tm-salic-settings-floating');
+      root.dataset.tmSalicSettingsPlacement = 'floating';
+      document.body.appendChild(root);
+      return 'floating';
     }
-    const sidebarInfo = document.querySelector('#sidenav .sidebar-info');
-    if (sidebarInfo) {
-      sidebarInfo.appendChild(root);
-      return;
+
+    let host = document.getElementById(CONFIG.settingsHostId);
+    if (!host) {
+      host = document.createElement('li');
+      host.id = CONFIG.settingsHostId;
+      host.className = 'tm-salic-settings-host';
     }
-    const form = document.querySelector('form#frmProposta');
-    if (form) {
-      form.insertAdjacentElement('afterbegin', root);
-      return;
+    const sessionItem = document.querySelector('#cronometro-sessao')?.closest('li');
+    if (sessionItem && sessionItem.parentElement === shortcutsList) {
+      shortcutsList.insertBefore(host, sessionItem);
+    } else if (host.parentElement !== shortcutsList) {
+      shortcutsList.appendChild(host);
     }
-    document.body.appendChild(root);
+    host.appendChild(root);
+    return 'inline';
   }
 
   function addSettingsMenu() {
-    const existingRoot = document.getElementById(CONFIG.settingsRootId);
-    const existingMenu = document.getElementById(CONFIG.settingsMenuId);
-    if (existingRoot && existingMenu) return;
-    if (existingRoot && !existingMenu) existingRoot.remove();
-    if (existingMenu && !existingRoot) existingMenu.remove();
+    const { root: existingRoot, menu: existingMenu, button: existingButton } = removeSettingsDuplicates();
+    if (existingRoot && existingMenu && existingButton) {
+      placeSettingsRoot(existingRoot);
+      return;
+    }
+    if (existingRoot) existingRoot.remove();
+    if (existingMenu) existingMenu.remove();
 
     injectStyles();
     const root = document.createElement('div');
@@ -3293,6 +3346,8 @@
       if (!node || node.nodeType !== 1) return true;
       if (
         node.id === CONFIG.settingsRootId
+        || node.id === CONFIG.settingsHostId
+        || node.id === CONFIG.settingsButtonId
         || node.id === CONFIG.settingsMenuId
         || node.id === CONFIG.customStyleId
         || node.id === 'tm-salic-upgrade-text-editor-css'
