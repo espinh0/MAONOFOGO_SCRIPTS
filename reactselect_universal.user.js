@@ -3,7 +3,7 @@
 // @namespace    universal-react-select
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
-// @version      2.14
+// @version      2.15
 // @description  Converts plain HTML select dropdowns into React Select components with sync.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -43,6 +43,8 @@
     minOptionsMin: 0,
     minOptionsMax: 99,
     settingEventName: 'tm-salic-setting-change',
+    devParam: 'tm_ps_dev',
+    devKey: 'tm-salic-suite-dev-mode',
     settingOn: '1',
     settingOff: '0'
   };
@@ -60,6 +62,40 @@
   };
 
   const ROOT = window;
+
+  function getQueryParam(name) {
+    try {
+      return new URLSearchParams(window.location.search).get(name) || '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function isSuiteDevModeEnabled() {
+    const value = getQueryParam(CONFIG.devParam).toLowerCase();
+    if (
+      value === '1' ||
+      value === 'true' ||
+      value === 'yes' ||
+      value === 'on'
+    ) {
+      return true;
+    }
+    if (
+      value === '0' ||
+      value === 'false' ||
+      value === 'no' ||
+      value === 'off'
+    ) {
+      return false;
+    }
+    try {
+      const stored = localStorage.getItem(CONFIG.devKey);
+      return stored === CONFIG.settingOn || stored === true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   function isReactSelectEnabled() {
     try {
@@ -516,36 +552,59 @@
     let suppressSelectMutation = false;
 
     function render() {
+      const palette = isSuiteDevModeEnabled()
+        ? {
+            accent: '#f97316',
+            border: '#fdba74',
+            controlBg: '#fff7ed',
+            focusShadow: '0 0 0 2px rgba(249, 115, 22, 0.18)',
+            value: '#7c2d12',
+            placeholder: '#9a3412',
+            separator: '#fed7aa',
+            menuShadow: '0 8px 18px rgba(249, 115, 22, 0.16)',
+            focusedOption: '#ffedd5'
+          }
+        : {
+            accent: '#0d6efd',
+            border: '#8bb8f5',
+            controlBg: '#f8fbff',
+            focusShadow: '0 0 0 2px rgba(13, 110, 253, 0.16)',
+            value: '#12385f',
+            placeholder: '#5f7894',
+            separator: '#b7d1f4',
+            menuShadow: '0 8px 18px rgba(13, 110, 253, 0.14)',
+            focusedOption: '#eaf3ff'
+          };
       const styles = {
         container: (base) => ({ ...base, width: '100%', minWidth: 0, maxWidth: '100%' }),
         control: (base, state) => ({
           ...base,
           minHeight: 30,
           minWidth: 0,
-          borderColor: state.isFocused ? '#0d6efd' : '#8bb8f5',
+          borderColor: state.isFocused ? palette.accent : palette.border,
           borderLeftWidth: 4,
-          borderLeftColor: '#0d6efd',
-          backgroundColor: '#f8fbff',
-          boxShadow: state.isFocused ? '0 0 0 2px rgba(13, 110, 253, 0.16)' : 'none',
+          borderLeftColor: palette.accent,
+          backgroundColor: palette.controlBg,
+          boxShadow: state.isFocused ? palette.focusShadow : 'none',
           '&:hover': {
-            borderColor: '#0d6efd'
+            borderColor: palette.accent
           }
         }),
         valueContainer: (base) => ({ ...base, minWidth: 0, padding: '1px 6px 1px 10px' }),
         input: (base) => ({ ...base, margin: 0, padding: 0 }),
-        singleValue: (base) => ({ ...base, color: '#12385f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }),
-        placeholder: (base) => ({ ...base, color: '#5f7894' }),
+        singleValue: (base) => ({ ...base, color: palette.value, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }),
+        placeholder: (base) => ({ ...base, color: palette.placeholder }),
         indicatorsContainer: (base) => ({ ...base, flexShrink: 0, minHeight: 28 }),
-        dropdownIndicator: (base) => ({ ...base, padding: '3px 4px', color: '#0d6efd' }),
+        dropdownIndicator: (base) => ({ ...base, padding: '3px 4px', color: palette.accent }),
         clearIndicator: (base) => ({ ...base, padding: '3px 4px' }),
-        indicatorSeparator: (base) => ({ ...base, marginTop: 5, marginBottom: 5, backgroundColor: '#b7d1f4' }),
-        menu: (base) => ({ ...base, minWidth: Math.min(CONFIG.menuMinWidth, window.innerWidth - 16), border: '1px solid #8bb8f5', boxShadow: '0 8px 18px rgba(13, 110, 253, 0.14)' }),
+        indicatorSeparator: (base) => ({ ...base, marginTop: 5, marginBottom: 5, backgroundColor: palette.separator }),
+        menu: (base) => ({ ...base, minWidth: Math.min(CONFIG.menuMinWidth, window.innerWidth - 16), border: `1px solid ${palette.border}`, boxShadow: palette.menuShadow }),
         menuPortal: (base) => ({ ...base, zIndex: CONFIG.maxMenuZIndex, minWidth: Math.min(CONFIG.menuMinWidth, window.innerWidth - 16) }),
         option: (base, state) => ({
           ...base,
           padding: '5px 10px',
-          backgroundColor: state.isSelected ? '#0d6efd' : (state.isFocused ? '#eaf3ff' : base.backgroundColor),
-          color: state.isSelected ? '#fff' : '#17324d'
+          backgroundColor: state.isSelected ? palette.accent : (state.isFocused ? palette.focusedOption : base.backgroundColor),
+          color: state.isSelected ? '#fff' : palette.value
         })
       };
       const valueProp = isMulti

@@ -3,7 +3,7 @@
 
   const CONFIG = {
     apiName: '__tmPowerSalicUpgradeTextEditor',
-    version: '1.0.1',
+    version: '1.0.2',
     settingKey: 'tm-salic-setting-alt-editor',
     settingEventName: 'tm-salic-setting-change',
     settingOn: '1',
@@ -13,10 +13,18 @@
     quillCssId: 'tm-salic-quill-css',
     quillJsId: 'tm-salic-quill-js',
     quillCssUrl: 'https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css',
-    quillJsUrl: 'https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js'
+    quillJsUrl: 'https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js',
+    batchSize: 1,
+    batchDelayMs: 80
   };
 
   if (window[CONFIG.apiName] && window[CONFIG.apiName].version) {
+    if (window[CONFIG.apiName].version === CONFIG.version) {
+      try {
+        if (typeof window[CONFIG.apiName].apply === 'function') window[CONFIG.apiName].apply();
+      } catch (_) {}
+      return;
+    }
     try {
       if (typeof window[CONFIG.apiName].dispose === 'function') {
         window[CONFIG.apiName].dispose();
@@ -24,12 +32,6 @@
         window[CONFIG.apiName].apply();
       }
     } catch (_) {}
-    if (window[CONFIG.apiName] && window[CONFIG.apiName].version === CONFIG.version) {
-      try {
-        window[CONFIG.apiName].apply();
-      } catch (_) {}
-      return;
-    }
   }
 
   if (window.__tmPowerSalicUpgradeTextEditorLoading) {
@@ -41,9 +43,14 @@
     editors: new WeakMap(),
     quillPromise: null,
     observerTimer: null,
+    batchTimer: null,
+    queue: [],
+    queuedFields: new Set(),
+    editorFields: new Set(),
     observer: null,
     applying: false,
-    pendingFields: new WeakSet()
+    pendingFields: new WeakSet(),
+    settingListener: null
   };
 
   function isEnabled() {
@@ -170,6 +177,21 @@
     if (field.closest && field.closest('.select2, .select2-container, .chosen-container, .dropdown, .autocomplete')) return false;
     if (field.getAttribute('data-tm-localmem') === 'off') return false;
     return true;
+  }
+
+  function isVisibleNode(node) {
+    if (!node || !node.isConnected) return false;
+    const style = window.getComputedStyle(node);
+    if (!style || style.display === 'none' || style.visibility === 'hidden') return false;
+    const rect = node.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+
+  function isInitializableField(field) {
+    if (!isEligibleField(field)) return false;
+    if (STATE.editors.get(field)) return false;
+    const root = getEditorRoot(field);
+    return Boolean(root && isVisibleNode(root));
   }
 
   function injectStyles() {
@@ -302,11 +324,26 @@
     } catch (_) {}
   }
 
+  function pauseObserver() {
+    if (!STATE.observer) return;
+    try {
+      STATE.observer.disconnect();
+    } catch (_) {}
+  }
+
+  function resumeObserver() {
+    if (!STATE.observer) return;
+    try {
+      STATE.observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+    } catch (_) {}
+  }
+
   function createEditor(field) {
     if (!field || STATE.editors.get(field)) return;
     if (!isEnabled()) return;
     const root = getEditorRoot(field);
     if (!root) return;
+    if (!isVisibleNode(root)) return;
 
     if (!window.Quill) {
       if (STATE.pendingFields.has(field)) return;
@@ -322,6 +359,7 @@
 
     registerQuillFormats();
     injectStyles();
+    pauseObserver();
 
     const wrapper = document.createElement('div');
     wrapper.className = 'tm-salic-alt-editor';
@@ -333,55 +371,60 @@
     editorHost.dataset.tmReactselect = 'off';
     wrapper.appendChild(editorHost);
 
-    const quill = new window.Quill(editorHost, {
-      theme: 'snow',
-      modules: {
-        toolbar: [
-          ['bold', 'italic', 'underline'],
-          [{ color: [] }, { background: [] }],
-          [{ size: ['12px', '14px', '16px', '18px', '24px', '32px'] }],
-          [{ list: 'ordered' }, { list: 'bullet' }],
-          ['link'],
-          ['clean']
-        ]
-      }
-    });
-
-    const toolbar = wrapper.querySelector('.ql-toolbar');
-    if (toolbar) {
-      toolbar.dataset.tmReactselect = 'off';
-      toolbar.classList.add('tm-reactselect-ignore');
-      toolbar.querySelectorAll('select').forEach((select) => {
-        select.dataset.tmReactselect = 'off';
-        select.classList.add('tm-reactselect-ignore');
+    try {
+      const quill = new window.Quill(editorHost, {
+        theme: 'snow',
+        modules: {
+          toolbar: [
+            ['bold', 'italic', 'underline'],
+            [{ color: [] }, { background: [] }],
+            [{ size: ['12px', '14px', '16px', '18px', '24px', '32px'] }],
+            [{ list: 'ordered' }, { list: 'bullet' }],
+            ['link'],
+            ['clean']
+          ]
+        }
       });
+
+      const toolbar = wrapper.querySelector('.ql-toolbar');
+      if (toolbar) {
+        toolbar.dataset.tmReactselect = 'off';
+        toolbar.classList.add('tm-reactselect-ignore');
+        toolbar.querySelectorAll('select').forEach((select) => {
+          select.dataset.tmReactselect = 'off';
+          select.classList.add('tm-reactselect-ignore');
+        });
+      }
+
+      const initialHtml = getFieldValue(field);
+      if (initialHtml) quill.clipboard.dangerouslyPasteHTML(initialHtml, 'silent');
+
+      const onTextChange = () => {
+        const value = quill.root.innerHTML || '';
+        updateHiddenTextarea(field, value);
+        dispatchFieldChange(field);
+      };
+      quill.on('text-change', onTextChange);
+
+      const previousDisplay = root.style.display || '';
+      const previousAriaHidden = root.getAttribute('aria-hidden');
+      root.classList.add('tm-salic-legacy-editor-hidden');
+      root.style.setProperty('display', 'none', 'important');
+      root.setAttribute('aria-hidden', 'true');
+      root.insertAdjacentElement('afterend', wrapper);
+
+      STATE.editors.set(field, {
+        wrapper,
+        body: quill.root,
+        root,
+        quill,
+        previousDisplay,
+        previousAriaHidden
+      });
+      STATE.editorFields.add(field);
+    } finally {
+      resumeObserver();
     }
-
-    const initialHtml = getFieldValue(field);
-    if (initialHtml) quill.clipboard.dangerouslyPasteHTML(initialHtml, 'silent');
-
-    const onTextChange = () => {
-      const value = quill.root.innerHTML || '';
-      updateHiddenTextarea(field, value);
-      dispatchFieldChange(field);
-    };
-    quill.on('text-change', onTextChange);
-
-    const previousDisplay = root.style.display || '';
-    const previousAriaHidden = root.getAttribute('aria-hidden');
-    root.classList.add('tm-salic-legacy-editor-hidden');
-    root.style.setProperty('display', 'none', 'important');
-    root.setAttribute('aria-hidden', 'true');
-    root.insertAdjacentElement('afterend', wrapper);
-
-    STATE.editors.set(field, {
-      wrapper,
-      body: quill.root,
-      root,
-      quill,
-      previousDisplay,
-      previousAriaHidden
-    });
   }
 
   function removeEditor(field) {
@@ -400,19 +443,65 @@
     }
     if (entry.wrapper) entry.wrapper.remove();
     STATE.editors.delete(field);
+    STATE.editorFields.delete(field);
     dispatchFieldChange(field);
+  }
+
+  function clearQueue() {
+    STATE.queue = [];
+    STATE.queuedFields.clear();
+    if (STATE.batchTimer) {
+      clearTimeout(STATE.batchTimer);
+      STATE.batchTimer = null;
+    }
+  }
+
+  function processQueue() {
+    STATE.batchTimer = null;
+    if (!isEnabled()) {
+      clearQueue();
+      apply();
+      return;
+    }
+
+    let processed = 0;
+    while (STATE.queue.length && processed < CONFIG.batchSize) {
+      const field = STATE.queue.shift();
+      STATE.queuedFields.delete(field);
+      if (field && field.isConnected && isInitializableField(field)) {
+        createEditor(field);
+        processed += 1;
+      }
+    }
+
+    if (STATE.queue.length) {
+      STATE.batchTimer = setTimeout(processQueue, CONFIG.batchDelayMs);
+    }
+  }
+
+  function enqueueField(field) {
+    if (!field || STATE.queuedFields.has(field) || STATE.editors.get(field)) return;
+    STATE.queuedFields.add(field);
+    STATE.queue.push(field);
   }
 
   function apply() {
     if (STATE.applying) return;
     STATE.applying = true;
-    const fields = Array.from(document.querySelectorAll('textarea'));
     try {
+      if (!isEnabled()) {
+        clearQueue();
+        Array.from(STATE.editorFields).forEach((field) => removeEditor(field));
+        return;
+      }
+
+      const fields = Array.from(document.querySelectorAll('textarea'));
       fields.forEach((field) => {
-        if (!isEligibleField(field)) return;
-        if (isEnabled()) createEditor(field);
-        else removeEditor(field);
+        if (isInitializableField(field)) enqueueField(field);
       });
+      if (STATE.queue.length && !STATE.batchTimer) {
+        STATE.batchTimer = setTimeout(processQueue, 0);
+      }
     } finally {
       STATE.applying = false;
     }
@@ -441,13 +530,19 @@
         clearTimeout(STATE.observerTimer);
         STATE.observerTimer = null;
       }
+      clearQueue();
+      if (STATE.settingListener) {
+        window.removeEventListener(CONFIG.settingEventName, STATE.settingListener);
+        STATE.settingListener = null;
+      }
     }
   };
 
-  window.addEventListener(CONFIG.settingEventName, (event) => {
+  STATE.settingListener = (event) => {
     if (!event.detail || event.detail.key !== CONFIG.settingKey) return;
     apply();
-  });
+  };
+  window.addEventListener(CONFIG.settingEventName, STATE.settingListener);
 
   STATE.observer = new MutationObserver((mutations) => {
     const ownMutation = mutations.every((mutation) => {
