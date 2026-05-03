@@ -3,7 +3,7 @@
 
   const CONFIG = {
     apiName: '__tmPowerSalicUpgradeTextEditor',
-    version: '2.0.1',
+    version: '2.0.3',
     settingKey: 'tm-salic-setting-alt-editor',
     settingEventName: 'tm-salic-setting-change',
     settingOn: '1',
@@ -15,6 +15,7 @@
 
   const BASE = `https://cdn.jsdelivr.net/npm/tinymce@${CONFIG.tinymceVersion}`;
   const SRC = `${BASE}/tinymce.min.js`;
+  const PAGE = typeof unsafeWindow === 'undefined' ? window : unsafeWindow;
 
   if (window[CONFIG.apiName] && window[CONFIG.apiName].version === CONFIG.version) {
     try {
@@ -32,7 +33,7 @@
     entries: new WeakMap(),
     fields: new Set(),
     tinyPromise: null,
-    oldTinyMce: window.tinymce || window.tinyMCE || null,
+    oldTinyMce: PAGE.tinymce || PAGE.tinyMCE || null,
     initTimer: null,
     queue: [],
     queuedFields: new Set(),
@@ -69,6 +70,12 @@
     } catch (_) {
       return null;
     }
+  }
+
+  function captureLegacyTinyMce() {
+    const current = PAGE.tinymce || PAGE.tinyMCE || null;
+    if (!current || String(current.majorVersion) === '8') return;
+    STATE.oldTinyMce = current;
   }
 
   function getOldEditorContainer(field) {
@@ -133,23 +140,56 @@
   }
 
   function loadTinyMce8() {
-    if (window.tinymce && String(window.tinymce.majorVersion) === '8') {
-      return Promise.resolve(window.tinymce);
+    if (PAGE.tinymce && String(PAGE.tinymce.majorVersion) === '8') {
+      return Promise.resolve(PAGE.tinymce);
     }
     if (STATE.tinyPromise) return STATE.tinyPromise;
 
     STATE.tinyPromise = new Promise((resolve, reject) => {
+      if (typeof GM_xmlhttpRequest === 'function') {
+        GM_xmlhttpRequest({
+          method: 'GET',
+          url: SRC,
+          onload: (resp) => {
+            if (resp.status < 200 || resp.status >= 300) {
+              reject(new Error(`Failed to fetch TinyMCE 8 (${resp.status})`));
+              return;
+            }
+            try {
+              const source = `${resp.responseText || ''}\n//# sourceURL=${SRC}`;
+              if (PAGE.eval && PAGE !== window) PAGE.eval(source);
+              else (0, eval)(source);
+              if (PAGE.tinymce && String(PAGE.tinymce.majorVersion) === '8') {
+                resolve(PAGE.tinymce);
+              } else {
+                reject(new Error('TinyMCE 8 loaded but window.tinymce was not initialized'));
+              }
+            } catch (err) {
+              reject(err);
+            }
+          },
+          onerror: () => reject(new Error('Failed to fetch TinyMCE 8'))
+        });
+        return;
+      }
+
       const existing = document.querySelector(`script[src="${SRC}"]`);
       if (existing) {
-        existing.addEventListener('load', () => resolve(window.tinymce));
+        existing.addEventListener('load', () => {
+          if (PAGE.tinymce && String(PAGE.tinymce.majorVersion) === '8') resolve(PAGE.tinymce);
+          else reject(new Error('TinyMCE 8 script loaded but window.tinymce was not initialized'));
+        });
         existing.addEventListener('error', reject);
         return;
       }
 
       const script = document.createElement('script');
       script.src = SRC;
-      script.onload = () => resolve(window.tinymce);
-      script.onerror = reject;
+      script.onload = () => {
+        if (PAGE.tinymce && String(PAGE.tinymce.majorVersion) === '8') resolve(PAGE.tinymce);
+        else reject(new Error('TinyMCE 8 script loaded but window.tinymce was not initialized'));
+      };
+      script.onerror = () => reject(new Error('Failed to load TinyMCE 8 script'));
       document.head.appendChild(script);
     });
     return STATE.tinyPromise;
@@ -221,6 +261,7 @@
 
   async function createEditor(field) {
     if (!isEnabled() || !isEligibleField(field) || STATE.entries.has(field)) return;
+    captureLegacyTinyMce();
     field.dataset.tmUpgradeTextEditor = '1';
 
     const { mirror, oldContainer } = createMirror(field);

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Power Salic Suite
 // @namespace    power-salic
-// @version      1.1.3
+// @version      1.1.4
 // @description  Loader dinamico do Power SALIC e ReactSelect com modo developer via localhost.
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js
@@ -14,6 +14,7 @@
 // @grant        GM_setValue
 // @grant        GM_deleteValue
 // @grant        GM_xmlhttpRequest
+// @grant        unsafeWindow
 // @connect      raw.githubusercontent.com
 // @connect      cdnjs.cloudflare.com
 // @connect      cdn.jsdelivr.net
