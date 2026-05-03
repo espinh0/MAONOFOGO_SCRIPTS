@@ -3,7 +3,7 @@
 // @namespace    universal-react-select
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js
-// @version      2.9
+// @version      2.10
 // @description  Converts plain HTML select dropdowns into React Select components with sync.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -239,6 +239,20 @@
   overflow: hidden !important;
   white-space: nowrap !important;
 }
+.tm-reactselect-materialize-disabled > select {
+  position: absolute !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+}
 .tm-reactselect-wrapper {
   display: inline-block;
   width: 100%;
@@ -254,9 +268,15 @@
   left: 0;
   width: 3px;
   border-radius: 3px;
-  background: #0d6efd;
+  background: #000000;
   z-index: 1;
   pointer-events: none;
+}
+.tm-reactselect-materialize-disabled > input.select-dropdown,
+.tm-reactselect-materialize-disabled > .caret,
+.tm-reactselect-materialize-disabled > ul.select-dropdown {
+  display: none !important;
+  pointer-events: none !important;
 }
 `;
     document.head.appendChild(style);
@@ -289,15 +309,28 @@
     if (select.matches(CONFIG.ignoreSelector)) return false;
     if (select.closest && select.closest(CONFIG.ignoreSelector)) return false;
     if (select.getAttribute('data-tm-reactselect') === 'off') return false;
-    if (getSelectableOptionCount(select) < getMinOptionsThreshold()) return false;
+    if (!select.multiple && getSelectableOptionCount(select) < getMinOptionsThreshold()) return false;
     return true;
+  }
+
+  function getMaterializeWrapper(select) {
+    if (!select || !select.closest) return null;
+    const wrapper = select.closest('.select-wrapper');
+    if (!wrapper || !wrapper.contains(select)) return null;
+    const hasMaterializeMarkup = Boolean(
+      select.classList.contains('initialized') ||
+      select.getAttribute('data-select-id') ||
+      wrapper.querySelector('input.select-dropdown') ||
+      wrapper.querySelector('ul.select-dropdown')
+    );
+    return hasMaterializeMarkup ? wrapper : null;
   }
 
   function getPlaceholder(select) {
     const explicit = select.getAttribute('data-placeholder') || select.getAttribute('placeholder');
     if (explicit && explicit.trim()) return explicit.trim();
     const firstOption = select.options && select.options.length ? select.options[0] : null;
-    if (firstOption && firstOption.value === '' && firstOption.textContent.trim()) {
+    if (firstOption && isPlaceholderOption(firstOption, 0) && firstOption.textContent.trim()) {
       return firstOption.textContent.trim();
     }
     return CONFIG.placeholderText;
@@ -309,7 +342,7 @@
     const rawValue = option.getAttribute('value');
     const hasExplicitValue = rawValue !== null;
     const value = hasExplicitValue ? rawValue : option.value;
-    return value === '';
+    return value === '' || (!hasExplicitValue && option.disabled);
   }
 
   function buildOptions(select) {
@@ -395,12 +428,20 @@
 
   function createReactSelect(select) {
     const previousTabIndex = select.getAttribute('tabindex');
+    const materializeWrapper = getMaterializeWrapper(select);
     const wrapper = document.createElement('div');
     wrapper.className = 'tm-reactselect-wrapper';
     wrapper.dataset.tmReactselectHost = '1';
-    select.insertAdjacentElement('afterend', wrapper);
+    if (materializeWrapper) {
+      materializeWrapper.insertAdjacentElement('afterend', wrapper);
+      materializeWrapper.classList.add('tm-reactselect-materialize-disabled');
+      materializeWrapper.dataset.tmReactselectMaterializeDisabled = '1';
+    } else {
+      select.insertAdjacentElement('afterend', wrapper);
+    }
 
-    const computedWidthRaw = window.getComputedStyle(select).width;
+    const widthSource = materializeWrapper || select;
+    const computedWidthRaw = window.getComputedStyle(widthSource).width;
     const computedWidth = Number.parseFloat(computedWidthRaw);
     if (Number.isFinite(computedWidth) && computedWidth > 0) {
       wrapper.style.width = `${computedWidth}px`;
@@ -520,6 +561,7 @@
     const instance = {
       select,
       wrapper,
+      materializeWrapper,
       optionObserver,
       selectChangeHandler,
       refreshFromSelect,
@@ -542,6 +584,10 @@
       }
       if (instance.wrapper && instance.wrapper.parentElement) {
         instance.wrapper.remove();
+      }
+      if (instance.materializeWrapper) {
+        instance.materializeWrapper.classList.remove('tm-reactselect-materialize-disabled');
+        delete instance.materializeWrapper.dataset.tmReactselectMaterializeDisabled;
       }
       select.classList.remove(CONFIG.hiddenClass);
       if (instance.previousTabIndex === null || instance.previousTabIndex === undefined) select.removeAttribute('tabindex');

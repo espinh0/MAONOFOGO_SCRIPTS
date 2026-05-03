@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Power Salic Suite
 // @namespace    power-salic
-// @version      1.1.1
+// @version      1.1.2
 // @description  Loader dinamico do Power SALIC e ReactSelect com modo developer via localhost.
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/power_salic_suite.user.js
@@ -36,14 +36,16 @@
 
     productionScriptUrls: [
       'https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js',
-      'https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js'
+      'https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/reactselect_universal.user.js',
+      'https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/upgradetexteditor.js'
     ],
 
     // VS Code Live Server geralmente usa http://127.0.0.1:5500
     // Ajuste a pasta se seus arquivos estiverem dentro de subdiretório.
     developerScriptUrls: [
       'http://127.0.0.1:5500/salic_melhorias_locais.user.js',
-      'http://127.0.0.1:5500/reactselect_universal.user.js'
+      'http://127.0.0.1:5500/reactselect_universal.user.js',
+      'http://127.0.0.1:5500/upgradetexteditor.js'
     ]
   };
 

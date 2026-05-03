@@ -3,7 +3,8 @@
 // @namespace    power-salic
 // @updateURL    https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
 // @downloadURL  https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/salic_melhorias_locais.user.js
-// @version      3.15
+// @require      https://raw.githubusercontent.com/espinh0/MAONOFOGO_SCRIPTS/main/upgradetexteditor.js
+// @version      3.16
 // @description  Salvamento local automatico de campos de texto e ocultacao do botao excluir proposta.
 // @match        https://aplicacoes.cultura.gov.br/*
 // @match        https://salic.cultura.gov.br/*
@@ -49,6 +50,7 @@
     reactSelectMinOptionsMax: 99,
     richPasteKey: 'tm-salic-setting-rich-paste',
     altEditorKey: 'tm-salic-setting-alt-editor',
+    altEditorApiName: '__tmPowerSalicUpgradeTextEditor',
     collapsibleStatePrefix: 'tm-salic-collapsible-state',
     tabStatePrefix: 'tm-salic-tab-state',
     filterStatePrefix: 'tm-salic-filter-state',
@@ -75,9 +77,7 @@
     filterInteractionUntil: 0,
     filterListenersReady: false,
     settingsListenersReady: false,
-    altEditors: new WeakMap(),
     pasteModal: null,
-    quillPromise: null,
     settings: Object.create(null)
   };
 
@@ -522,7 +522,7 @@
       transition: transform .15s ease-in-out;
     }
     .tm-salic-switch[aria-checked="true"] {
-      border-color: #0d6efd;
+      border-color: #fd0d0d;
       background: #0d6efd;
     }
     .tm-salic-switch[aria-checked="true"] .tm-salic-switch-knob {
@@ -659,92 +659,6 @@
     input[type="text"][aria-expanded],
     input[type="text"][aria-haspopup] {
       padding-left: 0.5rem;
-    }
-    .tm-salic-alt-editor {
-      border: 1px solid #cbd5e1;
-      border-radius: .5rem;
-      overflow: hidden;
-      background: #fff;
-      box-shadow: 0 6px 18px rgba(15, 23, 42, .08);
-    }
-    .tm-salic-legacy-editor-hidden {
-      display: none !important;
-    }
-    .tm-salic-alt-editor .ql-toolbar.ql-snow {
-      border: 0;
-      border-bottom: 1px solid #e2e8f0;
-      background: #f8fafc;
-    }
-    .tm-salic-alt-editor .ql-container.ql-snow {
-      border: 0;
-      font: 400 .9rem/1.5 Arial, sans-serif;
-      color: #111827;
-    }
-    .tm-salic-alt-editor .ql-editor {
-      min-height: 260px;
-      font: 400 16px/1.5 Arial, sans-serif;
-      color: #111827;
-      background: #fff;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-    }
-    .tm-salic-alt-editor .ql-editor p,
-    .tm-salic-alt-editor .ql-editor ol,
-    .tm-salic-alt-editor .ql-editor ul {
-      margin: 0 0 .5em;
-    }
-    .tm-salic-alt-editor .ql-editor .ql-size-small {
-      font-size: .75em;
-    }
-    .tm-salic-alt-editor .ql-editor .ql-size-large {
-      font-size: 1.5em;
-    }
-    .tm-salic-alt-editor .ql-editor .ql-size-huge {
-      font-size: 2.5em;
-    }
-    .tm-salic-alt-editor .ql-toolbar select,
-    .tm-salic-alt-editor .ql-toolbar .ql-picker {
-      max-width: none;
-    }
-    .tm-salic-alt-editor .ql-toolbar .ql-size {
-      width: 5.5rem;
-    }
-    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="12px"]::before,
-    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="12px"]::before {
-      content: "12px";
-      font-size: 12px;
-    }
-    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="14px"]::before,
-    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="14px"]::before {
-      content: "14px";
-      font-size: 14px;
-    }
-    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="16px"]::before,
-    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="16px"]::before {
-      content: "16px";
-      font-size: 16px;
-    }
-    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="18px"]::before,
-    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="18px"]::before {
-      content: "18px";
-      font-size: 18px;
-    }
-    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="24px"]::before,
-    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="24px"]::before {
-      content: "24px";
-      font-size: 24px;
-    }
-    .tm-salic-alt-editor .ql-size .ql-picker-item[data-value="32px"]::before,
-    .tm-salic-alt-editor .ql-size .ql-picker-label[data-value="32px"]::before {
-      content: "32px";
-      font-size: 32px;
-    }
-    .tm-salic-alt-editor .ql-size .ql-picker-label::before {
-      line-height: 1;
-      vertical-align: middle;
-    }
-    .tm-salic-alt-editor .ql-size .ql-picker-options {
-      min-width: 6rem;
     }
     .tm-salic-paste-backdrop {
       position: fixed;
@@ -948,7 +862,13 @@
   }
 
   function getAltEditorEntry(field) {
-    return STATE.altEditors.get(field) || null;
+    const api = window[CONFIG.altEditorApiName];
+    if (!api || typeof api.getEntry !== 'function') return null;
+    try {
+      return api.getEntry(field) || null;
+    } catch (_) {
+      return null;
+    }
   }
 
   function setLegacyEditorContent(field, value) {
@@ -1004,7 +924,16 @@
     const nextValue = value === null || value === undefined ? '' : String(value);
     const altEntry = getAltEditorEntry(field);
     if (altEntry && altEntry.body) {
-      altEntry.body.innerHTML = nextValue;
+      if (altEntry.quill) {
+        try {
+          altEntry.quill.setText('', 'silent');
+          if (nextValue) altEntry.quill.clipboard.dangerouslyPasteHTML(0, nextValue, 'silent');
+        } catch (_) {
+          altEntry.body.innerHTML = nextValue;
+        }
+      } else {
+        altEntry.body.innerHTML = nextValue;
+      }
       updateHiddenTextarea(field, nextValue);
       setLegacyEditorContent(field, nextValue);
       return;
@@ -1332,149 +1261,12 @@
     return true;
   }
 
-  function loadQuill() {
-    if (window.Quill) return Promise.resolve(window.Quill);
-    if (STATE.quillPromise) return STATE.quillPromise;
-    STATE.quillPromise = new Promise((resolve, reject) => {
-      const cssId = 'tm-salic-quill-css';
-      const jsId = 'tm-salic-quill-js';
-      if (!document.getElementById(cssId)) {
-        const link = document.createElement('link');
-        link.id = cssId;
-        link.rel = 'stylesheet';
-        link.href = 'https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css';
-        document.head.appendChild(link);
-      }
-      const existingScript = document.getElementById(jsId);
-      if (existingScript) {
-        if (window.Quill) resolve(window.Quill);
-        else existingScript.addEventListener('load', () => resolve(window.Quill));
-        return;
-      }
-      const script = document.createElement('script');
-      script.id = jsId;
-      script.src = 'https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js';
-      script.onload = () => resolve(window.Quill);
-      script.onerror = () => reject(new Error('Failed to load Quill'));
-      document.head.appendChild(script);
-    });
-    return STATE.quillPromise;
-  }
-
-  function registerQuillFormats() {
-    if (!window.Quill) return;
-    try {
-      const SizeStyle = window.Quill.import('attributors/style/size');
-      SizeStyle.whitelist = ['10px', '12px', '14px', '16px', '18px', '24px', '32px', '8pt', '10pt', '12pt', '14pt', '18pt', '24pt', '36pt'];
-      window.Quill.register(SizeStyle, true);
-    } catch (_) {}
-  }
-
-  function createAltEditor(field) {
-    if (!field || getAltEditorEntry(field)) return;
-    if (!isAltEditorEnabled()) return;
-    const root = getEditorRoot(field);
-    if (!root) return;
-
-    if (!window.Quill) {
-      loadQuill().then(() => createAltEditor(field)).catch(() => {});
-      return;
-    }
-
-    registerQuillFormats();
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'tm-salic-alt-editor';
-    wrapper.dataset.tmAltEditor = '1';
-    wrapper.dataset.tmReactselect = 'off';
-
-    const editorHost = document.createElement('div');
-    editorHost.className = 'tm-salic-alt-body';
-    editorHost.dataset.tmReactselect = 'off';
-    wrapper.appendChild(editorHost);
-
-    const key = getFieldKey(field);
-    const quill = new window.Quill(editorHost, {
-      theme: 'snow',
-      modules: {
-        toolbar: [
-          ['bold', 'italic', 'underline'],
-          [{ color: [] }, { background: [] }],
-          [{ size: ['12px', '14px', '16px', '18px', '24px', '32px'] }],
-          [{ list: 'ordered' }, { list: 'bullet' }],
-          ['link'],
-          ['clean']
-        ]
-      }
-    });
-    const toolbar = wrapper.querySelector('.ql-toolbar');
-    if (toolbar) {
-      toolbar.dataset.tmReactselect = 'off';
-      toolbar.classList.add('tm-reactselect-ignore');
-      toolbar.querySelectorAll('select').forEach((select) => {
-        select.dataset.tmReactselect = 'off';
-        select.classList.add('tm-reactselect-ignore');
-      });
-    }
-    const initialHtml = getFieldValue(field);
-    if (initialHtml) {
-      quill.clipboard.dangerouslyPasteHTML(initialHtml, 'silent');
-    }
-
-    const onAltInput = () => {
-      const value = quill.root.innerHTML || '';
-      const comparable = normalizeValue(value);
-      if (STATE.lastValue.get(field) === comparable) return;
-      STATE.userEdited.set(field, true);
-      STATE.lastValue.set(field, comparable);
-      updateHiddenTextarea(field, value);
-      scheduleSave(field, key);
-    };
-    const onAltFocus = () => {
-      const value = quill.root.innerHTML || '';
-      STATE.lastValue.set(field, normalizeValue(value));
-      STATE.userEdited.set(field, false);
-    };
-
-    quill.on('text-change', onAltInput);
-    editorHost.addEventListener('focusin', onAltFocus);
-
-    const previousDisplay = root.style.display || '';
-    const previousAriaHidden = root.getAttribute('aria-hidden');
-    root.classList.add('tm-salic-legacy-editor-hidden');
-    root.style.setProperty('display', 'none', 'important');
-    root.setAttribute('aria-hidden', 'true');
-    root.insertAdjacentElement('afterend', wrapper);
-
-    STATE.altEditors.set(field, { wrapper, body: quill.root, root, quill, previousDisplay, previousAriaHidden });
-  }
-
-  function removeAltEditor(field) {
-    const entry = getAltEditorEntry(field);
-    if (!entry) return;
-    const value = entry.body ? entry.body.innerHTML || '' : getFieldValue(field);
-    setLegacyEditorContent(field, value);
-    if (entry.root) {
-      entry.root.classList.remove('tm-salic-legacy-editor-hidden');
-      entry.root.style.display = entry.previousDisplay || '';
-      if (entry.previousAriaHidden === null || entry.previousAriaHidden === undefined) {
-        entry.root.removeAttribute('aria-hidden');
-      } else {
-        entry.root.setAttribute('aria-hidden', entry.previousAriaHidden);
-      }
-    }
-    if (entry.wrapper) entry.wrapper.remove();
-    STATE.altEditors.delete(field);
-  }
-
   function applyAltEditors() {
-    const enabled = isAltEditorEnabled();
-    const fields = Array.from(document.querySelectorAll('textarea'));
-    fields.forEach((field) => {
-      if (!isEligibleField(field)) return;
-      if (enabled) createAltEditor(field);
-      else removeAltEditor(field);
-    });
+    const api = window[CONFIG.altEditorApiName];
+    if (!api || typeof api.apply !== 'function') return;
+    try {
+      api.apply();
+    } catch (_) {}
   }
 
   function getPasteModal() {
